@@ -15,8 +15,6 @@ from knowledge import FINANCIAL_DATA
 bot = telebot.TeleBot(os.environ.get("BOT_TOKEN"))
 
 
-bot = telebot.TeleBot(BOT_TOKEN)
-
 # --- НОВЫЙ БЛОК С НАСТРОЙКАМИ GOOGLE SHEETS ---
 SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRitIhrxkXddq7kpf1Oy3qHXxSjD2u-8I0-deeQNOVLnhqTpFVjCtKE0t_ohYT4fvRKbvtX7kdOArWm/pub?output=csv"
 
