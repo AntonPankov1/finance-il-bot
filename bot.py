@@ -7,10 +7,6 @@ import requests
 import csv
 import time
 import yfinance as yf
-from telebot import apihelper
-from flask import Flask
-import threading
-apihelper.proxy = {'https': 'http://proxy.server:3128'}
 # Импорт базы знаний с кнопками
 from knowledge import FINANCIAL_DATA
 
