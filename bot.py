@@ -8,6 +8,8 @@ import csv
 import time
 import yfinance as yf
 from telebot import apihelper
+from flask import Flask
+import threading
 apihelper.proxy = {'https': 'http://proxy.server:3128'}
 # Импорт базы знаний с кнопками
 from knowledge import FINANCIAL_DATA
@@ -169,23 +171,26 @@ def handle_text(message):
         )
 # -----------------------------------------------------------
 
-# --- НАСТРОЙКИ ДЛЯ RENDER (СЕРВЕР-ЗАГЛУШКА) ---
+# --- ЗАГЛУШКА ДЛЯ RENDER ---
 app = Flask(__name__)
 
 @app.route('/')
-def health_check():
-    return "Bot is alive and working!"
+def index():
+    return "Bot is running!"
 
-def run_flask():
-    # Render сам выдает порт через системную переменную PORT
+def run_web():
+    # Render сам выдаст нужный порт через переменную окружения PORT
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
+# ---------------------------
 
-if __name__ == '__main__':
-    # 1. Запускаем веб-сервер в фоновом режиме (чтобы Render нас не выключил)
-    threading.Thread(target=run_flask).start()
-
+if __name__ == "__main__":
+    # 1. Запускаем фейковый веб-сервер в отдельном потоке, чтобы Render был доволен
+    threading.Thread(target=run_web).start()
+    
+    # 2. Запускаем самого бота
     print("Бот запущен...")
+    bot.polling(none_stop=True)
 
     # 2. Запускаем самого бота с твоим механизмом защиты
     while True:
