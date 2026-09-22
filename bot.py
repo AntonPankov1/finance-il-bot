@@ -1,19 +1,20 @@
 import os
 import threading
+import time
+import csv
+import requests
+import yfinance as yf
+
 from flask import Flask
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
-import requests
-import csv
-import time
-import yfinance as yf
+
 # Импорт базы знаний с кнопками
 from knowledge import FINANCIAL_DATA
 
 bot = telebot.TeleBot(os.environ.get("BOT_TOKEN"))
 
-
-# --- НОВЫЙ БЛОК С НАСТРОЙКАМИ GOOGLE SHEETS ---
+# --- БЛОК С НАСТРОЙКАМИ GOOGLE SHEETS ---
 SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRitIhrxkXddq7kpf1Oy3qHXxSjD2u-8I0-deeQNOVLnhqTpFVjCtKE0t_ohYT4fvRKbvtX7kdOArWm/pub?output=csv"
 
 def get_glossary_from_google():
@@ -40,11 +41,9 @@ def get_glossary_from_google():
 def get_main_menu():
     markup = InlineKeyboardMarkup(row_width=1)
 
-    # Добавляем кнопки из базы знаний
     for key, data in FINANCIAL_DATA.items():
         markup.add(InlineKeyboardButton(text=data['title'], callback_data=f"info_{key}"))
 
-    # ДОБАВЛЯЕМ КНОПКУ КУРСОВ ВАЛЮТ
     markup.add(InlineKeyboardButton(text="📊 Курсы валют, крипты и металлов", callback_data="show_rates"))
 
     return markup
@@ -58,8 +57,8 @@ def send_welcome(message):
         reply_markup=get_main_menu()
     )
 
+
 def get_market_rates():
-    # Словарь тикеров для Yahoo Finance
     tickers = {
         "🇺🇸 USD/ILS": "USDILS=X",
         "🇪🇺 EUR/ILS": "EURILS=X",
@@ -78,10 +77,8 @@ def get_market_rates():
     for name, ticker in tickers.items():
         try:
             data = yf.Ticker(ticker)
-            # Берем последнюю актуальную цену закрытия
             price = data.history(period="1d")['Close'].iloc[0]
 
-            # Форматируем вывод в зависимости от актива
             if "RUB" in name or "ILS" in name:
                 result_text += f"{name}: {price:.2f}\n"
             else:
@@ -91,9 +88,9 @@ def get_market_rates():
 
     return result_text
 
+
 @bot.callback_query_handler(func=lambda call: True)
 def handle_query(call):
-    # 1. Если нажали на кнопку финансовой темы
     if call.data.startswith("info_"):
         topic_key = call.data.replace("info_", "", 1)
 
@@ -115,7 +112,6 @@ def handle_query(call):
                 reply_markup=markup
             )
 
-    # 2. Если нажали на кнопку курсов валют
     elif call.data == "show_rates":
         bot.edit_message_text(
             chat_id=call.message.chat.id,
@@ -137,7 +133,6 @@ def handle_query(call):
             reply_markup=markup
         )
 
-    # 3. Если нажали на кнопку "Назад"
     elif call.data == "back_to_main":
         bot.edit_message_text(
             chat_id=call.message.chat.id,
@@ -146,7 +141,7 @@ def handle_query(call):
             reply_markup=get_main_menu()
         )
 
-# --- НОВЫЙ ОБРАБОТЧИК СЛОВАРЯ (ОБЯЗАТЕЛЬНО В САМОМ НИЗУ!) ---
+
 @bot.message_handler(func=lambda message: True)
 def handle_text(message):
     user_word = message.text.strip().lower()
@@ -165,7 +160,8 @@ def handle_text(message):
             "Я пока не знаю такого термина 😔\n"
             "Попробуй написать его иначе."
         )
-# -----------------------------------------------------------
+
+
 # --- НАСТРОЙКИ ДЛЯ RENDER (СЕРВЕР-ЗАГЛУШКА) ---
 app = Flask(__name__)
 
@@ -174,29 +170,24 @@ def index():
     return "Bot is running!"
 
 def run_web():
-    # Render сам выдаст нужный порт через переменную окружения PORT
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
 # ----------------------------------------------
 
+
 if __name__ == "__main__":
-    # 1. Запускаем фейковый веб-сервер в отдельном потоке, 
-    # чтобы Render видел открытый порт и ставил "зеленую галочку"
     threading.Thread(target=run_web).start()
     
-    # 2. Очищаем старые привязки (вебхуки), чтобы не было конфликтов
     try:
         bot.remove_webhook()
         print("Вебхуки очищены.")
     except Exception as e:
         print(f"Ошибка при очистке вебхука: {e}")
 
-    # 3. Запускаем самого бота с максимальной защитой от падений
     print("Бот запущен и готов к работе...")
     
     while True:
         try:
-            # Увеличенные таймауты спасают от ошибки urllib3.connectionpool
             bot.polling(none_stop=True, interval=0, timeout=20, request_timeout=65)
         except Exception as e:
             print(f"Ошибка соединения Telegram: {e}")
