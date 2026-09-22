@@ -12,8 +12,8 @@ apihelper.proxy = {'https': 'http://proxy.server:3128'}
 # Импорт базы знаний с кнопками
 from knowledge import FINANCIAL_DATA
 
-# --- ВОТ ЭТА СТРОЧКА ИМПОРТИРУЕТ ТОКЕН ИЗ config.py ---
-from config import BOT_TOKEN
+bot = telebot.TeleBot(os.environ.get("BOT_TOKEN"))
+
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
