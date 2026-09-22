@@ -59,12 +59,37 @@ def send_welcome(message):
     )
 
 def get_market_rates():
-    tickers = {
-        "🇺🇸 USD/ILS": "USDILS=X",
-        "🇪🇺 EUR/ILS": "EURILS=X",
-        "🇮🇱 ILS/RUB": "ILSRUB=X",
-        "🇷🇺 USD/RUB": "USDRUB=X",
-        "🇪🇺 EUR/RUB": "EURRUB=X",
+    result_text = "<b>📊 Актуальные курсы и рынки:</b>\n\n"
+
+    # 1. Получаем валюты через бесплатный API (базовая валюта — USD)
+    try:
+        response = requests.get("https://open.er-api.com/v6/latest/USD", timeout=5)
+        data = response.json()
+        
+        if data.get("result") == "success":
+            rates = data["rates"]
+            usd_ILS = rates.get("ILS", 3.6)
+            eur_USD = rates.get("EUR", 0.9) # Сколько евро за 1 USD
+            rub_USD = rates.get("RUB", 90.0) # Сколько рублей за 1 USD
+            
+            # Считаем кросс-курсы
+            eur_ILS = usd_ILS / eur_USD if eur_USD else 0
+            ils_RUB = rub_USD / usd_ILS if usd_ILS else 0
+            usd_RUB = rub_USD
+            eur_RUB = rub_USD * eur_USD
+            
+            result_text += f"🇺🇸 USD/ILS: {usd_ILS:.2f}\n"
+            result_text += f"🇪🇺 EUR/ILS: {eur_ILS:.2f}\n"
+            result_text += f"🇮🇱 ILS/RUB: {ils_RUB:.2f}\n"
+            result_text += f"🇷🇺 USD/RUB: {usd_RUB:.2f}\n"
+            result_text += f"🇪🇺 EUR/RUB: {eur_RUB:.2f}\n\n"
+        else:
+            result_text += "<i>💱 Валюты временно недоступны</i>\n\n"
+    except Exception as e:
+        result_text += f"<i>💱 Ошибка загрузки валют: {e}</i>\n\n"
+
+    # 2. Получаем крипту и металлы через yfinance
+    crypto_tickers = {
         "🪙 Bitcoin": "BTC-USD",
         "🔷 Ethereum": "ETH-USD",
         "🟣 Solana": "SOL-USD",
@@ -72,17 +97,18 @@ def get_market_rates():
         "🥈 Серебро": "SI=F"
     }
 
-    result_text = "<b>📊 Актуальные курсы и рынки:</b>\n\n"
-    for name, ticker in tickers.items():
+    for name, ticker in crypto_tickers.items():
         try:
             data = yf.Ticker(ticker)
-            price = data.history(period="1d")['Close'].iloc[0]
-            if "RUB" in name or "ILS" in name:
-                result_text += f"{name}: {price:.2f}\n"
-            else:
+            hist = data.history(period="5d")
+            if not hist.empty and 'Close' in hist.columns:
+                price = hist['Close'].iloc[-1]
                 result_text += f"{name}: ${price:.2f}\n"
+            else:
+                result_text += f"{name}: <i>нет данных</i>\n"
         except Exception as e:
-            result_text += f"{name}: <i>ошибка: {e}</i>\n"
+            result_text += f"{name}: <i>временно недоступно</i>\n"
+
     return result_text
 
 @bot.callback_query_handler(func=lambda call: True)
