@@ -66,9 +66,21 @@ update_glossary()
 
 def get_main_menu():
     markup = InlineKeyboardMarkup(row_width=1)
+    
+    # Генерация кнопок из словаря Google Sheets
     for key, data in FINANCIAL_DATA.items():
         markup.add(InlineKeyboardButton(text=data['title'], callback_data=f"info_{key}"))
+        
+    # Кнопка курсов валют
     markup.add(InlineKeyboardButton(text="📊 Курсы валют, крипты и металлов", callback_data="show_rates"))
+    
+    # НОВАЯ КНОПКА WEB APP
+    # ВАЖНО: Замени ссылку на свой реальный URL от GitHub Pages
+    markup.add(InlineKeyboardButton(
+        text="🧮 Кредитный калькулятор", 
+        web_app=WebAppInfo(url="https://antonpankov.github.io/finance-il-bot/calculator.html") 
+    ))
+    
     return markup
 
 @bot.message_handler(commands=['start'])
