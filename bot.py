@@ -6,6 +6,44 @@ import yfinance as yf
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 import threading
+import psycopg2
+from psycopg2.extras import RealDictCursor
+
+# Получаем ссылку на базу из настроек Render
+DB_URL = os.environ.get("DATABASE_URL")
+
+def get_db_connection():
+    """Открывает соединение с базой данных"""
+    try:
+        # Устанавливаем соединение. RealDictCursor нужен, чтобы получать данные 
+        # не просто списком, а удобным словарем {колонки: значения}
+        conn = psycopg2.connect(DB_URL, cursor_factory=RealDictCursor)
+        return conn
+    except Exception as e:
+        print("Ошибка подключения к БД:", e)
+        return None
+
+# ТЕСТОВАЯ ФУНКЦИЯ: регистрация пользователя
+def init_user_in_db(telegram_id):
+    conn = get_db_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            # Добавляем пользователя с базовым бюджетом в 10000 шекелей. 
+            # ON CONFLICT защищает от ошибки, если юзер уже есть в базе.
+            cur.execute("""
+                INSERT INTO users (telegram_id, monthly_budget) 
+                VALUES (%s, %s) 
+                ON CONFLICT (telegram_id) DO NOTHING;
+            """, (telegram_id, 10000.00))
+            
+            conn.commit()
+            cur.close()
+            conn.close()
+            return True
+        except Exception as e:
+            print("Ошибка при записи юзера:", e)
+    return False
 
 # Импортируем веб-сервер для поддержания активности на Render
 from keep_alive import keep_alive

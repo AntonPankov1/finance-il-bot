@@ -1,3 +1,4 @@
 pyTelegramBotAPI
 Flask
 yfinance
+psycopg2-binary
