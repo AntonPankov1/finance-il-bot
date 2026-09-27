@@ -78,7 +78,7 @@ def get_main_menu():
     # ВАЖНО: Замени ссылку на свой реальный URL от GitHub Pages
     markup.add(InlineKeyboardButton(
         text="🧮 Кредитный калькулятор", 
-        web_app=WebAppInfo(url="https://antonpankov.github.io/finance-il-bot/calculator.html") 
+        web_app=WebAppInfo(url="https://antonpankov1.github.io/finance-il-bot/calculator.html") 
     ))
     
     return markup
