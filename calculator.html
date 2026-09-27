@@ -3,173 +3,294 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Кредитный Калькулятор</title>
-    <!-- Подключаем библиотеку Telegram Web App -->
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <title>Финансовый калькулятор</title>
     <style>
-        /* Используем системные цвета Telegram для идеальной интеграции */
+        :root {
+            --tg-theme-bg-color: #ffffff;
+            --tg-theme-text-color: #000000;
+            --tg-theme-button-color: #3390ec;
+            --tg-theme-button-text-color: #ffffff;
+            --tg-theme-secondary-bg-color: #f4f4f5;
+            --tg-theme-hint-color: #999999;
+        }
         body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
             background-color: var(--tg-theme-bg-color, #ffffff);
             color: var(--tg-theme-text-color, #000000);
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            padding: 20px;
             margin: 0;
+            padding: 16px;
             box-sizing: border-box;
         }
-        h2 {
-            text-align: center;
-            color: var(--tg-theme-text-color, #000);
-            margin-bottom: 5px;
+        .tabs {
+            display: flex;
+            background-color: var(--tg-theme-secondary-bg-color, #f4f4f5);
+            border-radius: 8px;
+            padding: 4px;
+            margin-bottom: 20px;
         }
-        .subtitle {
+        .tab {
+            flex: 1;
             text-align: center;
-            font-size: 14px;
-            color: var(--tg-theme-hint-color, #999);
-            margin-bottom: 25px;
+            padding: 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 500;
+            color: var(--tg-theme-hint-color, #999999);
+            transition: background-color 0.2s, color 0.2s;
+        }
+        .tab.active {
+            background-color: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-text-color, #000000);
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+        .calculator-section {
+            display: none;
+        }
+        .calculator-section.active {
+            display: block;
         }
         .input-group {
-            margin-bottom: 20px;
+            margin-bottom: 16px;
         }
         label {
             display: block;
             margin-bottom: 8px;
-            font-weight: bold;
             font-size: 14px;
+            font-weight: 500;
         }
-        input[type="number"], input[type="range"] {
+        input {
             width: 100%;
             padding: 12px;
-            border: 1px solid var(--tg-theme-hint-color, #ccc);
+            border: 1px solid #ddd;
             border-radius: 8px;
-            background-color: var(--tg-theme-secondary-bg-color, #f4f4f5);
-            color: var(--tg-theme-text-color, #000);
-            font-size: 16px;
+            background-color: var(--tg-theme-bg-color, #ffffff);
+            color: var(--tg-theme-text-color, #000000);
             box-sizing: border-box;
+            font-size: 16px;
+        }
+        input:focus {
             outline: none;
+            border-color: var(--tg-theme-button-color, #3390ec);
         }
-        .slider-value {
+        .term-group {
             display: flex;
-            justify-content: space-between;
-            font-size: 14px;
-            color: var(--tg-theme-hint-color, #999);
-            margin-top: 5px;
+            gap: 12px;
         }
-        .results {
+        .term-group > div {
+            flex: 1;
+        }
+        button {
+            width: 100%;
+            padding: 14px;
             background-color: var(--tg-theme-button-color, #3390ec);
             color: var(--tg-theme-button-text-color, #ffffff);
-            padding: 20px;
-            border-radius: 12px;
-            margin-top: 30px;
-            text-align: center;
-        }
-        .results h3 {
-            margin: 0 0 10px 0;
+            border: none;
+            border-radius: 8px;
             font-size: 16px;
-            font-weight: normal;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 10px;
         }
-        .main-result {
-            font-size: 32px;
-            font-weight: bold;
-            margin-bottom: 15px;
+        .results {
+            margin-top: 24px;
+            padding: 16px;
+            background-color: var(--tg-theme-secondary-bg-color, #f4f4f5);
+            border-radius: 8px;
+            display: none;
         }
-        .details {
+        .result-item {
             display: flex;
             justify-content: space-between;
-            font-size: 14px;
-            border-top: 1px solid rgba(255,255,255,0.2);
-            padding-top: 15px;
+            margin-bottom: 12px;
+            font-size: 15px;
         }
-        .details div {
-            flex: 1;
+        .result-item:last-child {
+            margin-bottom: 0;
+            font-weight: bold;
+            font-size: 18px;
+            border-top: 1px solid #ddd;
+            padding-top: 12px;
+        }
+        .note {
+            font-size: 12px;
+            color: var(--tg-theme-hint-color, #999999);
+            margin-top: 4px;
         }
     </style>
 </head>
 <body>
-
-    <h2>Кредитный калькулятор</h2>
-    <div class="subtitle">Израильский стандарт (по таблице Шпицера)</div>
-
-    <div class="input-group">
-        <label>Сумма кредита (₪)</label>
-        <input type="number" id="amount" value="50000" inputmode="numeric">
+    <div class="tabs">
+        <div class="tab active" onclick="switchTab('loan')">Кредит</div>
+        <div class="tab" onclick="switchTab('investment')">Инвестиции</div>
     </div>
 
-    <div class="input-group">
-        <label>Срок кредита (лет): <span id="yearsVal">5</span></label>
-        <input type="range" id="years" min="1" max="30" value="5">
-    </div>
-
-    <div class="input-group">
-        <!-- Прайм в Израиле меняется, здесь задаем базовое значение. Пользователь меняет только маржу -->
-        <label>Ставка (Прайм ± %): <span id="rateVal">P + 1.5%</span></label>
-        <div class="slider-value">
-            <span>P - 2%</span>
-            <span>P + 5%</span>
+    <!-- КРЕДИТНЫЙ КАЛЬКУЛЯТОР -->
+    <div id="loan-calc" class="calculator-section active">
+        <div class="input-group">
+            <label>Сумма кредита (₪)</label>
+            <input type="number" id="loan-amount" placeholder="Например, 100000">
         </div>
-        <input type="range" id="margin" min="-2" max="5" step="0.1" value="1.5">
-        <div style="font-size: 12px; color: var(--tg-theme-hint-color, #999); margin-top: 5px;">
-            *Текущий Прайм заложен как 6.0%. Итоговая ставка: <span id="finalRatePreview" style="font-weight:bold;">7.5%</span>
+        <div class="input-group">
+            <label>Процентная ставка (%)</label>
+            <input type="number" id="loan-rate" step="0.1" value="4.75">
+            <div class="note">Текущая ставка Прайм (Prime) — 4.75%</div>
         </div>
-    </div>
-
-    <div class="results">
-        <h3>Ежемесячный платеж</h3>
-        <div class="main-result"><span id="monthlyPayment">1,001</span> ₪</div>
-        <div class="details">
+        <div class="input-group term-group">
             <div>
-                <div>Всего процентов</div>
-                <strong id="totalInterest">10,085 ₪</strong>
+                <label>Срок (годы)</label>
+                <input type="number" id="loan-years" value="0" min="0">
             </div>
             <div>
-                <div>Общая выплата</div>
-                <strong id="totalPayment">60,085 ₪</strong>
+                <label>Срок (месяцы)</label>
+                <input type="number" id="loan-months" value="0" min="0">
+            </div>
+        </div>
+        <button onclick="calculateLoan()">Рассчитать кредит</button>
+        
+        <div id="loan-results" class="results">
+            <div class="result-item">
+                <span>Ежемесячный платеж:</span>
+                <span id="loan-monthly-payment">0 ₪</span>
+            </div>
+            <div class="result-item">
+                <span>Переплата по процентам:</span>
+                <span id="loan-total-interest">0 ₪</span>
+            </div>
+            <div class="result-item">
+                <span>Общая сумма возврата:</span>
+                <span id="loan-total-payment">0 ₪</span>
             </div>
         </div>
     </div>
 
+    <!-- ИНВЕСТИЦИОННЫЙ КАЛЬКУЛЯТОР -->
+    <div id="investment-calc" class="calculator-section">
+        <div class="input-group">
+            <label>Начальная сумма (₪)</label>
+            <input type="number" id="inv-initial" placeholder="Например, 10000">
+        </div>
+        <div class="input-group">
+            <label>Ежемесячное пополнение (₪)</label>
+            <input type="number" id="inv-monthly" placeholder="Например, 1000">
+        </div>
+        <div class="input-group">
+            <label>Ожидаемая доходность в год (%)</label>
+            <input type="number" id="inv-rate" step="0.1" value="7.0">
+        </div>
+        <div class="input-group term-group">
+            <div>
+                <label>Срок (годы)</label>
+                <input type="number" id="inv-years" value="0" min="0">
+            </div>
+            <div>
+                <label>Срок (месяцы)</label>
+                <input type="number" id="inv-months" value="0" min="0">
+            </div>
+        </div>
+        <button onclick="calculateInvestment()">Рассчитать прибыль</button>
+
+        <div id="inv-results" class="results">
+            <div class="result-item">
+                <span>Вложено всего:</span>
+                <span id="inv-total-invested">0 ₪</span>
+            </div>
+            <div class="result-item">
+                <span>Прибыль (проценты):</span>
+                <span id="inv-total-interest">0 ₪</span>
+            </div>
+            <div class="result-item">
+                <span>Итоговая сумма:</span>
+                <span id="inv-total-balance">0 ₪</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script>
-        // Инициализация Telegram Web App
-        window.Telegram.WebApp.ready();
-        window.Telegram.WebApp.expand(); // Разворачиваем на весь экран
+        let tg = window.Telegram.WebApp;
+        tg.expand(); 
 
-        // Базовая ставка Прайм (можно обновлять в коде при изменениях Банка Израиля)
-        const PRIME_RATE = 6.0;
-
-        const inputs = ['amount', 'years', 'margin'];
-        inputs.forEach(id => document.getElementById(id).addEventListener('input', calculate));
-
-        function calculate() {
-            const P = parseFloat(document.getElementById('amount').value) || 0;
-            const years = parseFloat(document.getElementById('years').value);
-            const margin = parseFloat(document.getElementById('margin').value);
+        function switchTab(tab) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.calculator-section').forEach(s => s.classList.remove('active'));
+            document.querySelectorAll('.results').forEach(r => r.style.display = 'none');
             
-            document.getElementById('yearsVal').innerText = years;
-            document.getElementById('rateVal').innerText = `P ${margin >= 0 ? '+' : ''} ${margin}%`;
-            
-            const finalRate = PRIME_RATE + margin;
-            document.getElementById('finalRatePreview').innerText = finalRate.toFixed(1) + '%';
-
-            if (P > 0 && years > 0 && finalRate > 0) {
-                const r = (finalRate / 100) / 12; // месячная ставка
-                const n = years * 12; // количество месяцев
-                
-                // Формула Шпицера (аннуитетный платеж)
-                const monthly = P * (r * Math.pow(1 + r, n)) / (Math.pow(1 + r, n) - 1);
-                const total = monthly * n;
-                const interest = total - P;
-
-                document.getElementById('monthlyPayment').innerText = Math.round(monthly).toLocaleString();
-                document.getElementById('totalPayment').innerText = Math.round(total).toLocaleString() + ' ₪';
-                document.getElementById('totalInterest').innerText = Math.round(interest).toLocaleString() + ' ₪';
+            if (tab === 'loan') {
+                document.querySelectorAll('.tab')[0].classList.add('active');
+                document.getElementById('loan-calc').classList.add('active');
             } else {
-                document.getElementById('monthlyPayment').innerText = "0";
-                document.getElementById('totalPayment').innerText = "0 ₪";
-                document.getElementById('totalInterest').innerText = "0 ₪";
+                document.querySelectorAll('.tab')[1].classList.add('active');
+                document.getElementById('investment-calc').classList.add('active');
             }
         }
 
-        // Первичный расчет при загрузке
-        calculate();
+        function calculateLoan() {
+            const amount = parseFloat(document.getElementById('loan-amount').value) || 0;
+            const annualRate = parseFloat(document.getElementById('loan-rate').value) || 0;
+            const years = parseInt(document.getElementById('loan-years').value) || 0;
+            const months = parseInt(document.getElementById('loan-months').value) || 0;
+
+            const totalMonths = (years * 12) + months;
+            
+            if (amount <= 0 || totalMonths <= 0) {
+                alert("Пожалуйста, введите корректную сумму и срок.");
+                return;
+            }
+
+            const monthlyRate = (annualRate / 100) / 12;
+            let monthlyPayment = 0;
+            let totalPayment = 0;
+
+            if (annualRate === 0) {
+                monthlyPayment = amount / totalMonths;
+                totalPayment = amount;
+            } else {
+                monthlyPayment = amount * (monthlyRate * Math.pow(1 + monthlyRate, totalMonths)) / (Math.pow(1 + monthlyRate, totalMonths) - 1);
+                totalPayment = monthlyPayment * totalMonths;
+            }
+
+            const totalInterest = totalPayment - amount;
+
+            document.getElementById('loan-monthly-payment').innerText = formatCurrency(monthlyPayment);
+            document.getElementById('loan-total-interest').innerText = formatCurrency(totalInterest);
+            document.getElementById('loan-total-payment').innerText = formatCurrency(totalPayment);
+            document.getElementById('loan-results').style.display = 'block';
+        }
+
+        function calculateInvestment() {
+            const initial = parseFloat(document.getElementById('inv-initial').value) || 0;
+            const monthlyCont = parseFloat(document.getElementById('inv-monthly').value) || 0;
+            const annualRate = parseFloat(document.getElementById('inv-rate').value) || 0;
+            const years = parseInt(document.getElementById('inv-years').value) || 0;
+            const months = parseInt(document.getElementById('inv-months').value) || 0;
+
+            const totalMonths = (years * 12) + months;
+
+            if (totalMonths <= 0) {
+                alert("Пожалуйста, введите срок инвестирования.");
+                return;
+            }
+
+            const monthlyRate = (annualRate / 100) / 12;
+            let balance = initial;
+            let totalInvested = initial + (monthlyCont * totalMonths);
+
+            for (let i = 0; i < totalMonths; i++) {
+                balance += monthlyCont;
+                balance += balance * monthlyRate;
+            }
+
+            const totalInterest = balance - totalInvested;
+
+            document.getElementById('inv-total-invested').innerText = formatCurrency(totalInvested);
+            document.getElementById('inv-total-interest').innerText = formatCurrency(totalInterest);
+            document.getElementById('inv-total-balance').innerText = formatCurrency(balance);
+            document.getElementById('inv-results').style.display = 'block';
+        }
+
+        function formatCurrency(num) {
+            return num.toLocaleString('he-IL', { maximumFractionDigits: 0 }) + ' ₪';
+        }
     </script>
 </body>
 </html>
