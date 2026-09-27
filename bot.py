@@ -4,7 +4,7 @@ import csv
 import requests
 import yfinance as yf
 import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 import threading
 
 # Импортируем веб-сервер для поддержания активности на Render
