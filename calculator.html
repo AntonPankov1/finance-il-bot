@@ -6,201 +6,272 @@
     <title>Финансовый калькулятор</title>
     <style>
         :root {
-            --tg-theme-bg-color: #ffffff;
-            --tg-theme-text-color: #000000;
-            --tg-theme-button-color: #3390ec;
-            --tg-theme-button-text-color: #ffffff;
-            --tg-theme-secondary-bg-color: #f4f4f5;
-            --tg-theme-hint-color: #999999;
+            --bg-color: #f7f9fc;
+            --card-bg: #ffffff;
+            --text-main: #1d1d1f;
+            --text-muted: #86868b;
+            --primary: #007aff;
+            --primary-hover: #0056b3;
+            --input-bg: #f5f5f7;
+            --border: #e5e5ea;
         }
+
+        body.dark-theme {
+            --bg-color: #000000;
+            --card-bg: #1c1c1e;
+            --text-main: #f5f5f7;
+            --text-muted: #98989d;
+            --input-bg: #2c2c2e;
+            --border: #38383a;
+        }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            background-color: var(--tg-theme-bg-color, #ffffff);
-            color: var(--tg-theme-text-color, #000000);
+            font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
             margin: 0;
-            padding: 16px;
+            padding: 20px;
             box-sizing: border-box;
+            transition: background-color 0.3s;
         }
+
+        .calculator-container {
+            background: var(--card-bg);
+            border-radius: 24px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+            padding: 24px;
+            max-width: 450px;
+            margin: 0 auto;
+        }
+
         .tabs {
             display: flex;
-            background-color: var(--tg-theme-secondary-bg-color, #f4f4f5);
-            border-radius: 8px;
+            background-color: var(--input-bg);
+            border-radius: 12px;
             padding: 4px;
-            margin-bottom: 20px;
+            margin-bottom: 24px;
         }
+
         .tab {
             flex: 1;
             text-align: center;
-            padding: 8px;
-            border-radius: 6px;
+            padding: 10px;
+            border-radius: 10px;
             cursor: pointer;
-            font-weight: 500;
-            color: var(--tg-theme-hint-color, #999999);
-            transition: background-color 0.2s, color 0.2s;
+            font-weight: 600;
+            font-size: 15px;
+            color: var(--text-muted);
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
         }
+
         .tab.active {
-            background-color: var(--tg-theme-bg-color, #ffffff);
-            color: var(--tg-theme-text-color, #000000);
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            background-color: var(--card-bg);
+            color: var(--text-main);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.12);
         }
+
         .calculator-section {
             display: none;
+            animation: fadeIn 0.4s ease;
         }
+
         .calculator-section.active {
             display: block;
         }
-        .input-group {
-            margin-bottom: 16px;
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(5px); }
+            to { opacity: 1; transform: translateY(0); }
         }
+
+        .input-group {
+            margin-bottom: 18px;
+        }
+
         label {
             display: block;
             margin-bottom: 8px;
             font-size: 14px;
-            font-weight: 500;
+            font-weight: 600;
+            color: var(--text-main);
         }
+
         input {
             width: 100%;
-            padding: 12px;
-            border: 1px solid #ddd;
-            border-radius: 8px;
-            background-color: var(--tg-theme-bg-color, #ffffff);
-            color: var(--tg-theme-text-color, #000000);
+            padding: 14px 16px;
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            background-color: var(--input-bg);
+            color: var(--text-main);
             box-sizing: border-box;
             font-size: 16px;
+            font-weight: 500;
+            transition: all 0.2s;
         }
+
         input:focus {
             outline: none;
-            border-color: var(--tg-theme-button-color, #3390ec);
+            border-color: var(--primary);
+            background-color: var(--card-bg);
+            box-shadow: 0 0 0 4px rgba(0, 122, 255, 0.1);
         }
+
         .term-group {
             display: flex;
             gap: 12px;
         }
+
         .term-group > div {
             flex: 1;
         }
+
         button {
             width: 100%;
-            padding: 14px;
-            background-color: var(--tg-theme-button-color, #3390ec);
-            color: var(--tg-theme-button-text-color, #ffffff);
+            padding: 16px;
+            background: linear-gradient(135deg, var(--primary), var(--primary-hover));
+            color: #ffffff;
             border: none;
-            border-radius: 8px;
+            border-radius: 14px;
             font-size: 16px;
             font-weight: 600;
             cursor: pointer;
-            margin-top: 10px;
+            margin-top: 12px;
+            box-shadow: 0 4px 15px rgba(0, 122, 255, 0.3);
+            transition: transform 0.1s, box-shadow 0.2s;
         }
+
+        button:active {
+            transform: scale(0.98);
+            box-shadow: 0 2px 10px rgba(0, 122, 255, 0.2);
+        }
+
         .results {
             margin-top: 24px;
-            padding: 16px;
-            background-color: var(--tg-theme-secondary-bg-color, #f4f4f5);
-            border-radius: 8px;
+            padding: 20px;
+            background-color: var(--input-bg);
+            border-radius: 16px;
             display: none;
+            border: 1px solid var(--border);
         }
+
         .result-item {
             display: flex;
             justify-content: space-between;
-            margin-bottom: 12px;
+            margin-bottom: 14px;
             font-size: 15px;
+            color: var(--text-muted);
         }
-        .result-item:last-child {
+
+        .result-item span:last-child {
+            color: var(--text-main);
+            font-weight: 600;
+        }
+
+        .result-item.total {
             margin-bottom: 0;
-            font-weight: bold;
+            padding-top: 14px;
+            border-top: 1px solid var(--border);
             font-size: 18px;
-            border-top: 1px solid #ddd;
-            padding-top: 12px;
+            color: var(--text-main);
+            font-weight: 700;
         }
+
+        .result-item.total span:last-child {
+            color: var(--primary);
+        }
+
         .note {
             font-size: 12px;
-            color: var(--tg-theme-hint-color, #999999);
-            margin-top: 4px;
+            color: var(--text-muted);
+            margin-top: 6px;
         }
     </style>
 </head>
 <body>
-    <div class="tabs">
-        <div class="tab active" onclick="switchTab('loan')">Кредит</div>
-        <div class="tab" onclick="switchTab('investment')">Инвестиции</div>
-    </div>
+    <div class="calculator-container">
+        <div class="tabs">
+            <div class="tab active" onclick="switchTab('loan')">Кредит</div>
+            <div class="tab" onclick="switchTab('investment')">Инвестиции</div>
+        </div>
 
-    <!-- КРЕДИТНЫЙ КАЛЬКУЛЯТОР -->
-    <div id="loan-calc" class="calculator-section active">
-        <div class="input-group">
-            <label>Сумма кредита (₪)</label>
-            <input type="number" id="loan-amount" placeholder="Например, 100000">
+        <!-- КРЕДИТНЫЙ КАЛЬКУЛЯТОР -->
+        <div id="loan-calc" class="calculator-section active">
+            <div class="input-group">
+                <label>Сумма кредита (₪)</label>
+                <input type="number" id="loan-amount" placeholder="Например, 100000">
+            </div>
+            <div class="input-group">
+                <label>Процентная ставка (%)</label>
+                <input type="number" id="loan-rate" step="0.1" value="4.75">
+                <div class="note">Текущая ставка Прайм — 4.75%</div>
+            </div>
+            <div class="input-group term-group">
+                <div>
+                    <label>Срок (годы)</label>
+                    <input type="number" id="loan-years" value="0" min="0">
+                </div>
+                <div>
+                    <label>Срок (месяцы)</label>
+                    <input type="number" id="loan-months" value="0" min="0">
+                </div>
+            </div>
+            <button onclick="calculateLoan()">Рассчитать кредит</button>
+            
+            <div id="loan-results" class="results">
+                <div class="result-item">
+                    <span>Ежемесячный платеж:</span>
+                    <span id="loan-monthly-payment">0 ₪</span>
+                </div>
+                <div class="result-item">
+                    <span>Переплата по процентам:</span>
+                    <span id="loan-total-interest">0 ₪</span>
+                </div>
+                <div class="result-item total">
+                    <span>Общая сумма возврата:</span>
+                    <span id="loan-total-payment">0 ₪</span>
+                </div>
+            </div>
         </div>
-        <div class="input-group">
-            <label>Процентная ставка (%)</label>
-            <input type="number" id="loan-rate" step="0.1" value="4.75">
-            <div class="note">Текущая ставка Прайм (Prime) — 4.75%</div>
-        </div>
-        <div class="input-group term-group">
-            <div>
-                <label>Срок (годы)</label>
-                <input type="number" id="loan-years" value="0" min="0">
-            </div>
-            <div>
-                <label>Срок (месяцы)</label>
-                <input type="number" id="loan-months" value="0" min="0">
-            </div>
-        </div>
-        <button onclick="calculateLoan()">Рассчитать кредит</button>
-        
-        <div id="loan-results" class="results">
-            <div class="result-item">
-                <span>Ежемесячный платеж:</span>
-                <span id="loan-monthly-payment">0 ₪</span>
-            </div>
-            <div class="result-item">
-                <span>Переплата по процентам:</span>
-                <span id="loan-total-interest">0 ₪</span>
-            </div>
-            <div class="result-item">
-                <span>Общая сумма возврата:</span>
-                <span id="loan-total-payment">0 ₪</span>
-            </div>
-        </div>
-    </div>
 
-    <!-- ИНВЕСТИЦИОННЫЙ КАЛЬКУЛЯТОР -->
-    <div id="investment-calc" class="calculator-section">
-        <div class="input-group">
-            <label>Начальная сумма (₪)</label>
-            <input type="number" id="inv-initial" placeholder="Например, 10000">
-        </div>
-        <div class="input-group">
-            <label>Ежемесячное пополнение (₪)</label>
-            <input type="number" id="inv-monthly" placeholder="Например, 1000">
-        </div>
-        <div class="input-group">
-            <label>Ожидаемая доходность в год (%)</label>
-            <input type="number" id="inv-rate" step="0.1" value="7.0">
-        </div>
-        <div class="input-group term-group">
-            <div>
-                <label>Срок (годы)</label>
-                <input type="number" id="inv-years" value="0" min="0">
+        <!-- ИНВЕСТИЦИОННЫЙ КАЛЬКУЛЯТОР -->
+        <div id="investment-calc" class="calculator-section">
+            <div class="input-group">
+                <label>Начальная сумма (₪)</label>
+                <input type="number" id="inv-initial" placeholder="Например, 10000">
             </div>
-            <div>
-                <label>Срок (месяцы)</label>
-                <input type="number" id="inv-months" value="0" min="0">
+            <div class="input-group">
+                <label>Ежемесячное пополнение (₪)</label>
+                <input type="number" id="inv-monthly" placeholder="Например, 1000">
             </div>
-        </div>
-        <button onclick="calculateInvestment()">Рассчитать прибыль</button>
+            <div class="input-group">
+                <label>Доходность в год (%)</label>
+                <input type="number" id="inv-rate" step="0.1" value="7.0">
+            </div>
+            <div class="input-group term-group">
+                <div>
+                    <label>Срок (годы)</label>
+                    <input type="number" id="inv-years" value="0" min="0">
+                </div>
+                <div>
+                    <label>Срок (месяцы)</label>
+                    <input type="number" id="inv-months" value="0" min="0">
+                </div>
+            </div>
+            <button onclick="calculateInvestment()">Рассчитать прибыль</button>
 
-        <div id="inv-results" class="results">
-            <div class="result-item">
-                <span>Вложено всего:</span>
-                <span id="inv-total-invested">0 ₪</span>
-            </div>
-            <div class="result-item">
-                <span>Прибыль (проценты):</span>
-                <span id="inv-total-interest">0 ₪</span>
-            </div>
-            <div class="result-item">
-                <span>Итоговая сумма:</span>
-                <span id="inv-total-balance">0 ₪</span>
+            <div id="inv-results" class="results">
+                <div class="result-item">
+                    <span>Вложено всего:</span>
+                    <span id="inv-total-invested">0 ₪</span>
+                </div>
+                <div class="result-item">
+                    <span>Прибыль (проценты):</span>
+                    <span id="inv-total-interest">0 ₪</span>
+                </div>
+                <div class="result-item total">
+                    <span>Итоговая сумма:</span>
+                    <span id="inv-total-balance">0 ₪</span>
+                </div>
             </div>
         </div>
     </div>
@@ -209,6 +280,11 @@
     <script>
         let tg = window.Telegram.WebApp;
         tg.expand(); 
+        
+        // Автоматическое включение темной темы, если она стоит в Telegram
+        if (tg.colorScheme === 'dark') {
+            document.body.classList.add('dark-theme');
+        }
 
         function switchTab(tab) {
             document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
