@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CoinKeeper Mini App</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        /* Адаптация под цвета Telegram (светлая/темная тема) */
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--tg-theme-secondary-bg-color, #f4f4f5);
+            color: var(--tg-theme-text-color, #000000);
+            margin: 0;
+            padding: 16px;
+            user-select: none;
+        }
+
+        .card {
+            background-color: var(--tg-theme-bg-color, #ffffff);
+            border-radius: 16px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            text-align: center;
+        }
+
+        .budget-title { font-size: 14px; color: var(--tg-theme-hint-color, #888); margin: 0 0 8px 0; }
+        .budget-amount { font-size: 32px; font-weight: bold; margin: 0; }
+        .budget-spent { font-size: 14px; color: #ff3b30; margin-top: 8px; }
+
+        .vault-card {
+            background: linear-gradient(135deg, #FF9A9E 0%, #FECFEF 100%);
+            color: #333;
+        }
+
+        .categories-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 20px 10px;
+            margin-top: 30px;
+        }
+
+        .category-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        .coin {
+            width: 64px;
+            height: 64px;
+            background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            box-shadow: 0 4px 10px rgba(255, 165, 0, 0.4);
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+
+        .coin:active { transform: scale(0.9); }
+        .cat-name { font-size: 12px; margin-top: 8px; font-weight: 500; }
+        .cat-limit { font-size: 11px; color: var(--tg-theme-hint-color, #888); }
+
+        /* Всплывающее окно (Модалка) */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.5); display: none;
+            align-items: flex-end; justify-content: center; z-index: 100;
+        }
+        .modal {
+            background: var(--tg-theme-bg-color, #fff); width: 100%;
+            border-radius: 20px 20px 0 0; padding: 24px 20px 40px;
+            box-sizing: border-box; text-align: center;
+            transform: translateY(100%); transition: transform 0.3s ease-out;
+        }
+        .modal.open { transform: translateY(0); }
+        .modal-title { margin: 0 0 20px 0; font-size: 18px; }
+        
+        input[type="number"] {
+            width: 100%; padding: 16px; font-size: 24px; text-align: center;
+            border: 2px solid var(--tg-theme-button-color, #3390ec);
+            border-radius: 12px; background: transparent;
+            color: var(--tg-theme-text-color, #000); box-sizing: border-box;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <!-- Главный баланс -->
+    <div class="card">
+        <p class="budget-title">Остаток на месяц</p>
+        <p class="budget-amount" id="available-budget">7,500 ₪</p>
+        <p class="budget-spent">Израсходовано: 2,500 ₪ (из 10,000 ₪)</p>
+    </div>
+
+    <!-- Копилка -->
+    <div class="card vault-card" onclick="openModal('Копилка', 'to_savings')">
+        <h3 style="margin: 0 0 5px 0;">🐷 Свинья-копилка</h3>
+        <p style="margin: 0; font-size: 20px; font-weight: bold;">1,200 ₪</p>
+        <p style="margin: 5px 0 0 0; font-size: 12px; opacity: 0.8;">Нажми, чтобы отложить</p>
+    </div>
+
+    <!-- Сетка категорий (Монетки) -->
+    <div class="categories-grid">
+        <div class="category-item" onclick="openModal('Продукты', 1)">
+            <div class="coin">🛒</div>
+            <div class="cat-name">Продукты</div>
+            <div class="cat-limit">1.5k / 3k</div>
+        </div>
+        <div class="category-item" onclick="openModal('Транспорт', 2)">
+            <div class="coin">🚌</div>
+            <div class="cat-name">Транспорт</div>
+            <div class="cat-limit">400 / 1k</div>
+        </div>
+        <div class="category-item" onclick="openModal('Кафе', 3)">
+            <div class="coin">☕</div>
+            <div class="cat-name">Кафе</div>
+            <div class="cat-limit">200 / 500</div>
+        </div>
+        <div class="category-item" onclick="openModal('Счета', 4)">
+            <div class="coin">🧾</div>
+            <div class="cat-name">Счета</div>
+            <div class="cat-limit">0 / 2k</div>
+        </div>
+        <div class="category-item" onclick="openModal('Шоппинг', 5)">
+            <div class="coin">🛍️</div>
+            <div class="cat-name">Шоппинг</div>
+            <div class="cat-limit">500 / 1k</div>
+        </div>
+    </div>
+
+    <!-- Всплывающее окно для ввода суммы -->
+    <div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+        <div class="modal" id="modal" onclick="event.stopPropagation()">
+            <h3 class="modal-title" id="modal-title">Добавить расход</h3>
+            <input type="number" id="amount-input" inputmode="decimal" placeholder="0 ₪">
+        </div>
+    </div>
+
+    <script>
+        // Инициализация Telegram Web App
+        const tg = window.Telegram.WebApp;
+        tg.expand(); // Разворачиваем на весь экран
+        
+        let currentCategoryId = null;
+        let currentActionType = 'expense';
+
+        const modalOverlay = document.getElementById('modal-overlay');
+        const modal = document.getElementById('modal');
+        const modalTitle = document.getElementById('modal-title');
+        const amountInput = document.getElementById('amount-input');
+
+        // Открытие окна ввода
+        function openModal(categoryName, categoryId) {
+            currentCategoryId = categoryId;
+            currentActionType = categoryId === 'to_savings' ? 'to_savings' : 'expense';
+            
+            modalTitle.innerText = currentActionType === 'expense' 
+                ? `Расход: ${categoryName}` 
+                : `Отложить в Копилку`;
+            
+            amountInput.value = '';
+            modalOverlay.style.display = 'flex';
+            setTimeout(() => modal.classList.add('open'), 10);
+            amountInput.focus();
+
+            // Показываем главную кнопку Telegram внизу экрана
+            tg.MainButton.text = currentActionType === 'expense' ? "ДОБАВИТЬ РАСХОД" : "ОТЛОЖИТЬ";
+            tg.MainButton.show();
+        }
+
+        // Закрытие окна
+        function closeModal(e) {
+            if (e && e.target !== modalOverlay) return;
+            modal.classList.remove('open');
+            setTimeout(() => modalOverlay.style.display = 'none', 300);
+            tg.MainButton.hide();
+        }
+
+        // Обработка нажатия на главную кнопку Telegram
+        tg.onEvent('mainButtonClicked', function() {
+            const amount = parseFloat(amountInput.value);
+            if (!amount || amount <= 0) {
+                tg.showAlert("Введите корректную сумму");
+                return;
+            }
+
+            // Отправляем данные боту (временно через sendData, позже подключим базу)
+            const data = {
+                action: currentActionType,
+                category_id: currentCategoryId,
+                amount: amount
+            };
+            
+            tg.sendData(JSON.stringify(data));
+        });
+    </script>
+</body>
+</html>

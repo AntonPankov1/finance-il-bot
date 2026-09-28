@@ -105,7 +105,7 @@ def get_main_menu():
     btn_rates = InlineKeyboardButton("💱 Курс валют", callback_data="show_rates")
     btn_coinkeeper = InlineKeyboardButton(
         "💰 CoinKeeper", 
-        web_app=WebAppInfo(url="https://твоя-ссылка-на-coinkeeper.com") # TODO: Заменить URL
+        web_app=WebAppInfo(url="https://antonpankov1.github.io/finance-il-bot/coinkeeper.html")
     )
     
     markup.row(btn_calc, btn_tlush)
