@@ -179,7 +179,7 @@ def handle_query(call):
         elif call.data == "menu_tables":
             markup = InlineKeyboardMarkup(row_width=1)
             # Укажи здесь ключи твоих таблиц из FINANCIAL_DATA
-            table_keys = ["pension_companies"] 
+            table_keys = ["pension_companies", "non_bank_cards_ad_min"] 
             for key in table_keys:
                 if key in FINANCIAL_DATA:
                     markup.add(InlineKeyboardButton(FINANCIAL_DATA[key]['title'], callback_data=f"info_{key}"))

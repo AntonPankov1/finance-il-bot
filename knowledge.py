@@ -14,8 +14,8 @@ FINANCIAL_DATA = {
         'description': 'Сравнение пенсионных фондов Израиля — 2026',
         'url': 'https://ionian-house-8ae.notion.site/2026-3ddd1fba6a2480eb99b7ffc7fc0bee26'
     },
-    'Внебанковские кредитные карты': {
-        'title': ' Внебанковские кредитные карты',
+    'non_bank_cards': {
+        'title': '💳 Внебанковские кредитные карты',
         'description': 'В Израиле кредитные карты выпускают три основные компании: Max, Cal и Isracard.',
         'url': 'https://teletype.in/@anton_pankov/SNNkbFePiYl'
     },
