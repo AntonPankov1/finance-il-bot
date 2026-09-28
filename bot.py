@@ -48,6 +48,14 @@ def get_stats():
         # Формируем словарь с тратами по категориям
         categories = {row[0]: float(row[1]) for row in expenses if row[0] is not None}
         total_spent = sum(categories.values())
+        # Считаем сумму копилки за всё время
+        cur.execute("""
+            SELECT SUM(amount) 
+            FROM expenses 
+            WHERE telegram_id = %s AND category = 'Копилка'
+        """, (user_id,))
+        savings_data = cur.fetchone()
+        total_savings = float(savings_data[0]) if savings_data and savings_data[0] is not None else 0
 
         cur.close()
         conn.close()
@@ -56,7 +64,8 @@ def get_stats():
         return jsonify({
             "budget": budget,
             "total_spent": total_spent,
-            "categories": categories
+            "categories": categories,
+            "total_savings": total_savings
         })
         
     except Exception as e:
@@ -384,8 +393,13 @@ def handle_web_app_data(message):
                 bot.send_message(message.chat.id, "❌ Ошибка базы данных.")
                 
         elif action == 'to_savings':
-            bot.send_message(message.chat.id, f"🐷 <b>{amount} ₪</b> отправлено в копилку!")
-            
+            # Записываем в базу как категорию 'Копилка'
+            success = add_expense_to_db(message.from_user.id, 'Копилка', amount)
+            if success:
+                bot.send_message(message.chat.id, f"🐷 <b>{amount} ₪</b> отправлено в копилку!", parse_mode='HTML')
+            else:
+                bot.send_message(message.chat.id, "❌ Ошибка базы данных.")
+
         # НОВЫЙ БЛОК ДЛЯ БЮДЖЕТА
         elif action == 'set_budget':
             success = update_user_budget(message.from_user.id, amount)
@@ -393,7 +407,7 @@ def handle_web_app_data(message):
                 bot.send_message(message.chat.id, f"🎯 Твой новый бюджет на месяц установлен: <b>{amount} ₪</b>", parse_mode='HTML')
             else:
                 bot.send_message(message.chat.id, "❌ Ошибка базы данных при обновлении бюджета.")
-                
+
     except Exception as e:
         print("Ошибка обработки web_app_data:", e)
         bot.send_message(message.chat.id, "❌ Произошла ошибка при обработке данных.")
