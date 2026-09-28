@@ -142,23 +142,25 @@ update_glossary()
 def get_main_menu():
     markup = InlineKeyboardMarkup()
     
-    # 1. Кнопки на всю ширину (Категории)
+    # 1. Основные разделы (на всю ширину)
     btn_articles = InlineKeyboardButton("📚 Статьи и база знаний", callback_data="menu_articles")
     btn_tables = InlineKeyboardButton("📊 Полезные таблицы", callback_data="menu_tables")
     markup.add(btn_articles)
     markup.add(btn_tables)
     
-    # 2. Кнопки 2x2 (Инструменты)
+    # 2. Инструменты
     btn_calc = InlineKeyboardButton(
         "🧮 Калькулятор", 
         web_app=WebAppInfo(url="https://antonpankov1.github.io/finance-il-bot/calculator.html")
     )
     btn_tlush = InlineKeyboardButton("📄 Чтение тлуша", callback_data="read_tlush")
-    
     btn_rates = InlineKeyboardButton("💱 Курс валют", callback_data="show_rates")
     
+    # Размещаем Калькулятор и Тлуш в один горизонтальный ряд
     markup.row(btn_calc, btn_tlush)
-    markup.row(btn_rates, btn_coinkeeper)
+    
+    # Курс валют добавляем отдельной кнопкой снизу
+    markup.add(btn_rates)
     
     return markup
 
