@@ -1,80 +1,25 @@
 import os
 import time
 import csv
+import json
 import requests
-import yfinance as yf
-import telebot
-from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 import threading
+import schedule
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from telebot.types import ReplyKeyboardMarkup, KeyboardButton
+import yfinance as yf
+import telebot
+from telebot.types import (
+    InlineKeyboardMarkup,
+    InlineKeyboardButton,
+    WebAppInfo,
+    ReplyKeyboardMarkup,
+    KeyboardButton
+)
 from flask import request, jsonify
-from datetime import datetime
-import schedule # Понадобится для напоминаний
-import time
 
-# Импортируем веб-сервер для поддержания активности на Render
-from keep_alive import app, keep_alive
-@app.route('/api/stats')
-def get_stats():
-    user_id = request.args.get('telegram_id')
-    if not user_id:
-        return jsonify({"error": "Missing telegram_id"}), 400
-
-    conn = get_db_connection()
-    if not conn:
-        return jsonify({"error": "Database error"}), 500
-
-    try:
-        cur = conn.cursor()
-        
-        # Получаем бюджет пользователя. Если его нет, отдаем 0.
-        cur.execute("SELECT monthly_budget FROM users WHERE telegram_id = %s", (user_id,))
-        user_data = cur.fetchone()
-        budget = float(user_data[0]) if user_data and user_data[0] is not None else 0
-
-        # Считаем траты за текущий месяц
-        cur.execute("""
-            SELECT category, SUM(amount) 
-            FROM expenses 
-            WHERE telegram_id = %s 
-              AND EXTRACT(MONTH FROM created_at) = EXTRACT(MONTH FROM CURRENT_DATE)
-            GROUP BY category
-        """, (user_id,))
-        
-        expenses = cur.fetchall()
-        
-        # Формируем словарь с тратами по категориям
-        categories = {row[0]: float(row[1]) for row in expenses if row[0] is not None}
-        total_spent = sum(categories.values())
-        # Считаем сумму копилки за всё время
-        cur.execute("""
-            SELECT SUM(amount) 
-            FROM expenses 
-            WHERE telegram_id = %s AND category = 'Копилка'
-        """, (user_id,))
-        savings_data = cur.fetchone()
-        total_savings = float(savings_data[0]) if savings_data and savings_data[0] is not None else 0
-
-        cur.close()
-        conn.close()
-
-# ... (код подсчета) ...
-        return jsonify({
-            "budget": budget,
-            "total_spent": total_spent,
-            "categories": categories,
-            "total_savings": total_savings
-        })
-        
-    except Exception as e:
-        print("Ошибка API:", e)
-        return jsonify({"error": "Internal error"}), 500
-    finally:
-        if 'cur' in locals(): cur.close()
-        if conn: conn.close()
-# Импорт базы знаний
+# 1. Импортируем наш сервер и функцию запуска из keep_alive
+from keep_alive import app, run_server
 from knowledge import FINANCIAL_DATA
 
 # --- НАСТРОЙКИ БАЗЫ ДАННЫХ ---
@@ -82,30 +27,10 @@ DB_URL = os.environ.get("DATABASE_URL")
 
 def get_db_connection():
     try:
-        conn = psycopg2.connect(DB_URL, cursor_factory=RealDictCursor)
-        return conn
+        return psycopg2.connect(DB_URL, cursor_factory=RealDictCursor)
     except Exception as e:
         print("Ошибка подключения к БД:", e)
         return None
-
-def init_user_in_db(telegram_id):
-    conn = get_db_connection()
-    if conn:
-        try:
-            cur = conn.cursor()
-            cur.execute("""
-                INSERT INTO users (telegram_id, monthly_budget) 
-                VALUES (%s, %s) 
-                ON CONFLICT (telegram_id) DO NOTHING;
-            """, (telegram_id, 10000.00))
-            conn.commit()
-            return True
-        except Exception as e:
-            print("Ошибка при записи юзера:", e)
-        finally:
-            cur.close()
-            conn.close()
-    return False
 
 def init_db_tables():
     """Создает таблицы и индексы в базе данных при запуске"""
@@ -128,7 +53,6 @@ def init_db_tables():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             """)
-            # ДОБАВЛЕНЫ ИНДЕКСЫ ДЛЯ СКОРОСТИ:
             cur.execute("CREATE INDEX IF NOT EXISTS idx_expenses_user ON expenses(telegram_id);")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(created_at);")
             conn.commit()
@@ -136,10 +60,27 @@ def init_db_tables():
         except Exception as e:
             print("Ошибка при создании таблиц:", e)
         finally:
-            # Гарантированное закрытие соединения (Шаг 3)
             cur.close()
             conn.close()
 
+def init_user_in_db(telegram_id):
+    conn = get_db_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO users (telegram_id, monthly_budget) 
+                VALUES (%s, %s) 
+                ON CONFLICT (telegram_id) DO NOTHING;
+            """, (telegram_id, 0.00)) # Изменено на 0, чтобы просить установить бюджет
+            conn.commit()
+            return True
+        except Exception as e:
+            print("Ошибка при записи юзера:", e)
+        finally:
+            cur.close()
+            conn.close()
+    return False
 
 def add_expense_to_db(telegram_id, category, amount):
     conn = get_db_connection()
@@ -159,9 +100,7 @@ def add_expense_to_db(telegram_id, category, amount):
             conn.close()
     return False
 
-
 def update_user_budget(telegram_id, new_budget):
-    """Обновляет ежемесячный бюджет пользователя"""
     conn = get_db_connection()
     if conn:
         try:
@@ -180,6 +119,63 @@ def update_user_budget(telegram_id, new_budget):
             conn.close()
     return False
 
+# --- 2. API МАРШРУТЫ ДЛЯ WEB APP (Используем app из keep_alive) ---
+@app.route('/api/stats', methods=['GET'])
+def get_stats():
+    user_id = request.args.get('telegram_id')
+    if not user_id:
+        return jsonify({"error": "Missing telegram_id"}), 400
+
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Database error"}), 500
+
+    cur = None
+    try:
+        cur = conn.cursor()
+        
+        # Получаем бюджет пользователя
+        cur.execute("SELECT monthly_budget FROM users WHERE telegram_id = %s", (user_id,))
+        user_data = cur.fetchone()
+        budget = float(user_data['monthly_budget']) if user_data and user_data['monthly_budget'] is not None else 0
+
+        # Считаем траты за текущий месяц (КРОМЕ Копилки)
+        cur.execute("""
+            SELECT category, SUM(amount) as total
+            FROM expenses 
+            WHERE telegram_id = %s 
+              AND category != 'Копилка'
+              AND EXTRACT(MONTH FROM created_at) = EXTRACT(MONTH FROM CURRENT_DATE)
+              AND EXTRACT(YEAR FROM created_at) = EXTRACT(YEAR FROM CURRENT_DATE)
+            GROUP BY category
+        """, (user_id,))
+        
+        expenses = cur.fetchall()
+        categories = {row['category']: float(row['total']) for row in expenses if row['category']}
+        total_spent = sum(categories.values())
+
+        # Считаем сумму копилки за всё время
+        cur.execute("""
+            SELECT SUM(amount) as total
+            FROM expenses 
+            WHERE telegram_id = %s AND category = 'Копилка'
+        """, (user_id,))
+        savings_data = cur.fetchone()
+        total_savings = float(savings_data['total']) if savings_data and savings_data['total'] is not None else 0
+
+        return jsonify({
+            "budget": budget,
+            "total_spent": total_spent,
+            "categories": categories,
+            "total_savings": total_savings
+        })
+        
+    except Exception as e:
+        print("Ошибка API:", e)
+        return jsonify({"error": "Internal error"}), 500
+    finally:
+        if cur: cur.close()
+        if conn: conn.close()
 
 # --- ИНИЦИАЛИЗАЦИЯ БОТА ---
 token = os.environ.get("BOT_TOKEN")
@@ -226,14 +222,11 @@ update_glossary()
 # --- ЛОГИКА МЕНЮ ---
 def get_main_menu():
     markup = InlineKeyboardMarkup()
-    
-    # 1. Основные разделы (на всю ширину)
     btn_articles = InlineKeyboardButton("📚 Статьи и база знаний", callback_data="menu_articles")
     btn_tables = InlineKeyboardButton("📊 Полезные таблицы", callback_data="menu_tables")
     markup.add(btn_articles)
     markup.add(btn_tables)
     
-    # 2. Инструменты
     btn_calc = InlineKeyboardButton(
         "🧮 Калькулятор", 
         web_app=WebAppInfo(url="https://antonpankov1.github.io/finance-il-bot/calculator.html")
@@ -241,21 +234,14 @@ def get_main_menu():
     btn_tlush = InlineKeyboardButton("📄 Чтение тлуша", callback_data="read_tlush")
     btn_rates = InlineKeyboardButton("💱 Курс валют", callback_data="show_rates")
     
-    # Размещаем Калькулятор и Тлуш в один горизонтальный ряд
     markup.row(btn_calc, btn_tlush)
-    
-    # Курс валют добавляем отдельной кнопкой снизу
     markup.add(btn_rates)
-    
     return markup
-
-from telebot.types import ReplyKeyboardMarkup, KeyboardButton # Добавь в импорты
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     init_user_in_db(message.from_user.id)
     
-    # 1. Создаем постоянную нижнюю кнопку для Web App
     reply_markup = ReplyKeyboardMarkup(resize_keyboard=True)
     btn_app = KeyboardButton(
         text="💰 Открыть CoinKeeper", 
@@ -263,14 +249,12 @@ def send_welcome(message):
     )
     reply_markup.add(btn_app)
     
-    # 2. Отправляем приветствие с нижней кнопкой
     bot.send_message(
         message.chat.id,
         "Привет! Я твой финансовый навигатор по Израилю. Твой кошелек — в кнопке внизу экрана 👇",
         reply_markup=reply_markup
     )
     
-    # 3. Отправляем инлайн-меню со статьями следом (без кнопки коинкипера)
     bot.send_message(
         message.chat.id,
         "Также выбери нужный раздел базы знаний:",
@@ -319,10 +303,8 @@ def get_market_rates():
 @bot.callback_query_handler(func=lambda call: True)
 def handle_query(call):
     try:
-        # Подменю: Статьи
         if call.data == "menu_articles":
             markup = InlineKeyboardMarkup(row_width=1)
-            # Укажи здесь ключи твоих статей из FINANCIAL_DATA
             article_keys = ["banking", "pensions", "hishtalmut", "non_bank_cards"] 
             for key in article_keys:
                 if key in FINANCIAL_DATA:
@@ -330,10 +312,8 @@ def handle_query(call):
             markup.add(InlineKeyboardButton("⬅️ Назад", callback_data="back_to_main"))
             bot.edit_message_text("📚 *База знаний*\nВыбери статью:", chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode='Markdown', reply_markup=markup)
 
-        # Подменю: Таблицы
         elif call.data == "menu_tables":
             markup = InlineKeyboardMarkup(row_width=1)
-            # Укажи здесь ключи твоих таблиц из FINANCIAL_DATA
             table_keys = ["pension_companies", "non_bank_cards_ad_min"] 
             for key in table_keys:
                 if key in FINANCIAL_DATA:
@@ -341,7 +321,6 @@ def handle_query(call):
             markup.add(InlineKeyboardButton("⬅️ Назад", callback_data="back_to_main"))
             bot.edit_message_text("📊 *Полезные таблицы*\nВыбери таблицу:", chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode='Markdown', reply_markup=markup)
 
-        # Вывод конкретной статьи/таблицы
         elif call.data.startswith("info_"):
             topic_key = call.data.replace("info_", "", 1)
             if topic_key in FINANCIAL_DATA:
@@ -353,18 +332,15 @@ def handle_query(call):
                 markup.add(InlineKeyboardButton("⬅️ Назад в меню", callback_data="back_to_main"))
                 bot.edit_message_text(message_text, chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode='Markdown', reply_markup=markup, disable_web_page_preview=True)
         
-        # Курсы валют
         elif call.data == "show_rates":
             bot.edit_message_text("<i>⏳ Собираю котировки...</i>", chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode='HTML')
             markup = InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ Назад", callback_data="back_to_main"))
             bot.edit_message_text(get_market_rates(), chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode='HTML', reply_markup=markup)
             
-        # Заглушка для Тлуша
         elif call.data == "read_tlush":
             markup = InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ Назад", callback_data="back_to_main"))
             bot.edit_message_text("📄 *Чтение тлуша*\n\nФункция в разработке! Скоро здесь можно будет загрузить фото зарплатного листа для анализа.", chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode='Markdown', reply_markup=markup)
             
-        # Возврат в главное меню
         elif call.data == "back_to_main":
             bot.edit_message_text("Выбери нужный раздел:", chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=get_main_menu())
             
@@ -373,14 +349,10 @@ def handle_query(call):
     finally:
         bot.answer_callback_query(call.id)
 
-import json # Убедись, что json импортирован в самом верху файла
-
 @bot.message_handler(content_types=['web_app_data'])
 def handle_web_app_data(message):
     try:
-        # Извлекаем JSON-данные, которые мы отправили из JavaScript
         data = json.loads(message.web_app_data.data)
-        
         action = data.get('action')
         category = data.get('category_id')
         amount = data.get('amount')
@@ -393,14 +365,12 @@ def handle_web_app_data(message):
                 bot.send_message(message.chat.id, "❌ Ошибка базы данных.")
                 
         elif action == 'to_savings':
-            # Записываем в базу как категорию 'Копилка'
             success = add_expense_to_db(message.from_user.id, 'Копилка', amount)
             if success:
                 bot.send_message(message.chat.id, f"🐷 <b>{amount} ₪</b> отправлено в копилку!", parse_mode='HTML')
             else:
                 bot.send_message(message.chat.id, "❌ Ошибка базы данных.")
 
-        # НОВЫЙ БЛОК ДЛЯ БЮДЖЕТА
         elif action == 'set_budget':
             success = update_user_budget(message.from_user.id, amount)
             if success:
@@ -412,7 +382,6 @@ def handle_web_app_data(message):
         print("Ошибка обработки web_app_data:", e)
         bot.send_message(message.chat.id, "❌ Произошла ошибка при обработке данных.")
 
-# --- СЛОВАРЬ (ТЕКСТ) ---
 @bot.message_handler(func=lambda message: True)
 def handle_text(message):
     user_word = message.text.strip().lower()
@@ -422,47 +391,43 @@ def handle_text(message):
             return
     bot.send_message(message.chat.id, "Я пока не знаю такого термина 😔\nПопробуй написать иначе.")
 
+# --- ПЛАНИРОВЩИК НАПОМИНАНИЙ ---
 def send_daily_reminders():
     conn = get_db_connection()
     if conn:
         cur = conn.cursor()
         cur.execute("SELECT telegram_id FROM users")
         users = cur.fetchall()
-        
         for user in users:
             try:
                 bot.send_message(
-                    user[0], 
+                    user['telegram_id'], 
                     "🌙 День подходит к концу! Не забудь внести сегодняшние расходы в CoinKeeper 👇"
                 )
+                time.sleep(0.05) # Защита от спам-фильтра Telegram
             except Exception:
-                pass # Игнорируем ошибку, если пользователь заблокировал бота
-                
+                pass
         cur.close()
         conn.close()
 
 def reminder_thread():
-    # Сервер Render работает по Гринвичу (UTC). 
-    # 17:00 по UTC — это 20:00 в Израиле.
     schedule.every().day.at("17:00").do(send_daily_reminders)
-    
     while True:
         schedule.run_pending()
         time.sleep(60)
 
+# --- ЗАПУСК ---
 if __name__ == "__main__":
-    init_db_tables() # <--- ДОБАВЛЯЕМ СЮДА
+    init_db_tables()
     
-    # Запускаем наш веб-сервер-заглушку из отдельного файла
-    threading.Thread(target=keep_alive, daemon=True).start()
-    print("Веб-сервер запущен в фоне.")
+    # 3. Запускаем сервер, импортированный из keep_alive
+    threading.Thread(target=run_server, daemon=True).start()
+    print("Веб-сервер Flask запущен в фоне.")
     
-    # ДОБАВЛЯЕМ запуск планировщика ежедневных напоминаний
     threading.Thread(target=reminder_thread, daemon=True).start()
     print("Планировщик напоминаний запущен.")
 
     print("Бот запущен...")
-    
     while True:
         try:
             bot.infinity_polling(timeout=20, long_polling_timeout=20)
