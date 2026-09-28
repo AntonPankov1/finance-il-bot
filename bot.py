@@ -9,10 +9,62 @@ import threading
 import psycopg2
 from psycopg2.extras import RealDictCursor
 from telebot.types import ReplyKeyboardMarkup, KeyboardButton
-
+from flask import request, jsonify
+from datetime import datetime
+import schedule # Понадобится для напоминаний
+import time
 
 # Импортируем веб-сервер для поддержания активности на Render
-from keep_alive import keep_alive
+from keep_alive import app, keep_alive
+@app.route('/api/stats')
+def get_stats():
+    user_id = request.args.get('telegram_id')
+    if not user_id:
+        return jsonify({"error": "Missing telegram_id"}), 400
+
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "Database error"}), 500
+
+    try:
+        cur = conn.cursor()
+        
+        # Получаем бюджет пользователя. Если его нет, отдаем 0.
+        cur.execute("SELECT monthly_budget FROM users WHERE telegram_id = %s", (user_id,))
+        user_data = cur.fetchone()
+        budget = float(user_data[0]) if user_data and user_data[0] is not None else 0
+
+        # Считаем траты за текущий месяц
+        cur.execute("""
+            SELECT category, SUM(amount) 
+            FROM expenses 
+            WHERE telegram_id = %s 
+              AND EXTRACT(MONTH FROM created_at) = EXTRACT(MONTH FROM CURRENT_DATE)
+            GROUP BY category
+        """, (user_id,))
+        
+        expenses = cur.fetchall()
+        
+        # Формируем словарь с тратами по категориям
+        categories = {row[0]: float(row[1]) for row in expenses if row[0] is not None}
+        total_spent = sum(categories.values())
+
+        cur.close()
+        conn.close()
+
+# ... (код подсчета) ...
+        return jsonify({
+            "budget": budget,
+            "total_spent": total_spent,
+            "categories": categories
+        })
+        
+    except Exception as e:
+        print("Ошибка API:", e)
+        return jsonify({"error": "Internal error"}), 500
+    finally:
+        if 'cur' in locals(): cur.close()
+        if conn: conn.close()
 # Импорт базы знаний
 from knowledge import FINANCIAL_DATA
 
@@ -38,27 +90,26 @@ def init_user_in_db(telegram_id):
                 ON CONFLICT (telegram_id) DO NOTHING;
             """, (telegram_id, 10000.00))
             conn.commit()
-            cur.close()
-            conn.close()
             return True
         except Exception as e:
             print("Ошибка при записи юзера:", e)
+        finally:
+            cur.close()
+            conn.close()
     return False
 
 def init_db_tables():
-    """Создает таблицы в базе данных при запуске, если их нет"""
+    """Создает таблицы и индексы в базе данных при запуске"""
     conn = get_db_connection()
     if conn:
         try:
             cur = conn.cursor()
-            # Таблица пользователей (если еще не создана)
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     telegram_id BIGINT PRIMARY KEY,
-                    monthly_budget NUMERIC(10, 2) DEFAULT 10000.00
+                    monthly_budget NUMERIC(10, 2) DEFAULT 0.00
                 );
             """)
-            # Таблица расходов
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS expenses (
                     id SERIAL PRIMARY KEY,
@@ -68,18 +119,20 @@ def init_db_tables():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             """)
+            # ДОБАВЛЕНЫ ИНДЕКСЫ ДЛЯ СКОРОСТИ:
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_expenses_user ON expenses(telegram_id);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(created_at);")
             conn.commit()
-            cur.close()
-            conn.close()
-            print("Таблицы БД успешно инициализированы.")
+            print("Таблицы и индексы БД успешно инициализированы.")
         except Exception as e:
             print("Ошибка при создании таблиц:", e)
+        finally:
+            # Гарантированное закрытие соединения (Шаг 3)
+            cur.close()
+            conn.close()
 
-# Вызываем функцию при старте скрипта (добавь эту строчку без отступов)
-init_db_tables()
 
 def add_expense_to_db(telegram_id, category, amount):
-    """Записывает расход в базу данных"""
     conn = get_db_connection()
     if conn:
         try:
@@ -89,12 +142,35 @@ def add_expense_to_db(telegram_id, category, amount):
                 VALUES (%s, %s, %s);
             """, (telegram_id, category, amount))
             conn.commit()
-            cur.close()
-            conn.close()
             return True
         except Exception as e:
             print("Ошибка записи расхода:", e)
+        finally:
+            cur.close()
+            conn.close()
     return False
+
+
+def update_user_budget(telegram_id, new_budget):
+    """Обновляет ежемесячный бюджет пользователя"""
+    conn = get_db_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                UPDATE users 
+                SET monthly_budget = %s 
+                WHERE telegram_id = %s;
+            """, (new_budget, telegram_id))
+            conn.commit()
+            return True
+        except Exception as e:
+            print("Ошибка обновления бюджета:", e)
+        finally:
+            cur.close()
+            conn.close()
+    return False
+
 
 # --- ИНИЦИАЛИЗАЦИЯ БОТА ---
 token = os.environ.get("BOT_TOKEN")
@@ -301,21 +377,23 @@ def handle_web_app_data(message):
         amount = data.get('amount')
         
         if action == 'expense':
-            # Сохраняем в Supabase
             success = add_expense_to_db(message.from_user.id, category, amount)
-            
             if success:
-                bot.send_message(
-                    message.chat.id, 
-                    f"✅ Учтено: <b>{amount} ₪</b> в категорию «{category}»", 
-                    parse_mode='HTML'
-                )
+                bot.send_message(message.chat.id, f"✅ Учтено: <b>{amount} ₪</b> в категорию «{category}»", parse_mode='HTML')
             else:
                 bot.send_message(message.chat.id, "❌ Ошибка базы данных.")
                 
         elif action == 'to_savings':
             bot.send_message(message.chat.id, f"🐷 <b>{amount} ₪</b> отправлено в копилку!")
             
+        # НОВЫЙ БЛОК ДЛЯ БЮДЖЕТА
+        elif action == 'set_budget':
+            success = update_user_budget(message.from_user.id, amount)
+            if success:
+                bot.send_message(message.chat.id, f"🎯 Твой новый бюджет на месяц установлен: <b>{amount} ₪</b>", parse_mode='HTML')
+            else:
+                bot.send_message(message.chat.id, "❌ Ошибка базы данных при обновлении бюджета.")
+                
     except Exception as e:
         print("Ошибка обработки web_app_data:", e)
         bot.send_message(message.chat.id, "❌ Произошла ошибка при обработке данных.")
@@ -330,9 +408,45 @@ def handle_text(message):
             return
     bot.send_message(message.chat.id, "Я пока не знаю такого термина 😔\nПопробуй написать иначе.")
 
+def send_daily_reminders():
+    conn = get_db_connection()
+    if conn:
+        cur = conn.cursor()
+        cur.execute("SELECT telegram_id FROM users")
+        users = cur.fetchall()
+        
+        for user in users:
+            try:
+                bot.send_message(
+                    user[0], 
+                    "🌙 День подходит к концу! Не забудь внести сегодняшние расходы в CoinKeeper 👇"
+                )
+            except Exception:
+                pass # Игнорируем ошибку, если пользователь заблокировал бота
+                
+        cur.close()
+        conn.close()
+
+def reminder_thread():
+    # Сервер Render работает по Гринвичу (UTC). 
+    # 17:00 по UTC — это 20:00 в Израиле.
+    schedule.every().day.at("17:00").do(send_daily_reminders)
+    
+    while True:
+        schedule.run_pending()
+        time.sleep(60)
+
 if __name__ == "__main__":
+    init_db_tables() # <--- ДОБАВЛЯЕМ СЮДА
+    
+    # Запускаем наш веб-сервер-заглушку из отдельного файла
     threading.Thread(target=keep_alive, daemon=True).start()
     print("Веб-сервер запущен в фоне.")
+    
+    # ДОБАВЛЯЕМ запуск планировщика ежедневных напоминаний
+    threading.Thread(target=reminder_thread, daemon=True).start()
+    print("Планировщик напоминаний запущен.")
+
     print("Бот запущен...")
     
     while True:
