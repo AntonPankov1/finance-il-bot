@@ -9,34 +9,32 @@ import threading
 import psycopg2
 from psycopg2.extras import RealDictCursor
 
-# Получаем ссылку на базу из настроек Render
+# Импортируем веб-сервер для поддержания активности на Render
+from keep_alive import keep_alive
+# Импорт базы знаний
+from knowledge import FINANCIAL_DATA
+
+# --- НАСТРОЙКИ БАЗЫ ДАННЫХ ---
 DB_URL = os.environ.get("DATABASE_URL")
 
 def get_db_connection():
-    """Открывает соединение с базой данных"""
     try:
-        # Устанавливаем соединение. RealDictCursor нужен, чтобы получать данные 
-        # не просто списком, а удобным словарем {колонки: значения}
         conn = psycopg2.connect(DB_URL, cursor_factory=RealDictCursor)
         return conn
     except Exception as e:
         print("Ошибка подключения к БД:", e)
         return None
 
-# ТЕСТОВАЯ ФУНКЦИЯ: регистрация пользователя
 def init_user_in_db(telegram_id):
     conn = get_db_connection()
     if conn:
         try:
             cur = conn.cursor()
-            # Добавляем пользователя с базовым бюджетом в 10000 шекелей. 
-            # ON CONFLICT защищает от ошибки, если юзер уже есть в базе.
             cur.execute("""
                 INSERT INTO users (telegram_id, monthly_budget) 
                 VALUES (%s, %s) 
                 ON CONFLICT (telegram_id) DO NOTHING;
             """, (telegram_id, 10000.00))
-            
             conn.commit()
             cur.close()
             conn.close()
@@ -45,13 +43,7 @@ def init_user_in_db(telegram_id):
             print("Ошибка при записи юзера:", e)
     return False
 
-# Импортируем веб-сервер для поддержания активности на Render
-from keep_alive import keep_alive
-
-# Импорт базы знаний с кнопками
-from knowledge import FINANCIAL_DATA
-
-# Проверяем токен перед стартом
+# --- ИНИЦИАЛИЗАЦИЯ БОТА ---
 token = os.environ.get("BOT_TOKEN")
 if not token:
     raise ValueError("Не найден токен бота! Проверь переменные окружения BOT_TOKEN на Render.")
@@ -60,30 +52,23 @@ bot = telebot.TeleBot(token)
 
 # --- БЛОК С НАСТРОЙКАМИ GOOGLE SHEETS И КЭШИРОВАНИЕМ ---
 SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRitIhrxkXddq7kpf1Oy3qHXxSjD2u-8I0-deeQNOVLnhqTpFVjCtKE0t_ohYT4fvRKbvtX7kdOArWm/pub?output=csv"
-
-# Глобальная переменная для хранения словаря в оперативной памяти
 GLOSSARY_CACHE = {}
 
 def update_glossary():
     global GLOSSARY_CACHE
     try:
         response = requests.get(SHEET_CSV_URL, timeout=10)
-        
         if response.status_code != 200:
-            print(f"Ошибка сервера Google: статус {response.status_code}")
             return False
             
         response.encoding = 'utf-8'
         lines = response.text.splitlines()
         reader = csv.reader(lines)
-
         new_glossary = {}
-        next(reader, None) # Пропускаем заголовок таблицы
+        next(reader, None)
 
         for row in reader:
-            # Проверяем, что в строке есть минимум 2 колонки и первая не пустая
             if len(row) >= 2 and row[0].strip():
-                # Разбиваем по запятой, убираем пробелы и возможные случайные кавычки
                 keys = tuple([k.strip().strip(' "\'').lower() for k in row[0].split(',') if k.strip()])
                 definition = row[1].strip()
                 if keys:
@@ -91,195 +76,166 @@ def update_glossary():
                     
         if new_glossary:
             GLOSSARY_CACHE = new_glossary
-            print(f"✅ Словарь обновлен! Загружено терминов: {len(GLOSSARY_CACHE)}")
+            print(f"✅ Словарь обновлен! Терминов: {len(GLOSSARY_CACHE)}")
             return True
         return False
     except Exception as e:
         print(f"Ошибка загрузки таблицы: {e}")
         return False
 
-# Загружаем словарь в память при старте скрипта
 update_glossary()
-# -------------------------------------------------------
 
+# --- ЛОГИКА МЕНЮ ---
 def get_main_menu():
-    markup = InlineKeyboardMarkup(row_width=1)
+    markup = InlineKeyboardMarkup()
     
-    # Генерация кнопок из словаря Google Sheets
-    for key, data in FINANCIAL_DATA.items():
-        markup.add(InlineKeyboardButton(text=data['title'], callback_data=f"info_{key}"))
-        
-    # Кнопка курсов валют
-    markup.add(InlineKeyboardButton(text="📊 Курсы валют, крипты и металлов", callback_data="show_rates"))
+    # 1. Кнопки на всю ширину (Категории)
+    btn_articles = InlineKeyboardButton("📚 Статьи и база знаний", callback_data="menu_articles")
+    btn_tables = InlineKeyboardButton("📊 Полезные таблицы", callback_data="menu_tables")
+    markup.add(btn_articles)
+    markup.add(btn_tables)
     
-    # НОВАЯ КНОПКА WEB APP
-    # ВАЖНО: Замени ссылку на свой реальный URL от GitHub Pages
-    markup.add(InlineKeyboardButton(
-        text="🧮 Кредитный калькулятор", 
-        web_app=WebAppInfo(url="https://antonpankov1.github.io/finance-il-bot/calculator.html") 
-    ))
+    # 2. Кнопки 2x2 (Инструменты)
+    btn_calc = InlineKeyboardButton(
+        "🧮 Калькулятор", 
+        web_app=WebAppInfo(url="https://antonpankov1.github.io/finance-il-bot/calculator.html")
+    )
+    btn_tlush = InlineKeyboardButton("📄 Чтение тлуша", callback_data="read_tlush")
+    
+    btn_rates = InlineKeyboardButton("💱 Курс валют", callback_data="show_rates")
+    btn_coinkeeper = InlineKeyboardButton(
+        "💰 CoinKeeper", 
+        web_app=WebAppInfo(url="https://твоя-ссылка-на-coinkeeper.com") # TODO: Заменить URL
+    )
+    
+    markup.row(btn_calc, btn_tlush)
+    markup.row(btn_rates, btn_coinkeeper)
     
     return markup
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
+    init_user_in_db(message.from_user.id) # Регистрируем юзера при старте
     bot.send_message(
         message.chat.id,
-        "Привет! Я твой финансовый навигатор по Израилю. Выбери тему:",
+        "Привет! Я твой финансовый навигатор по Израилю. Выбери нужный раздел:",
         reply_markup=get_main_menu()
     )
 
-# --- СКРЫТАЯ КОМАНДА ДЛЯ ОБНОВЛЕНИЯ СЛОВАРЯ ---
 @bot.message_handler(commands=['update'])
 def force_update_glossary(message):
-    bot.send_message(message.chat.id, "🔄 Скачиваю свежие данные из Google Таблицы...")
-    success = update_glossary()
-    if success:
-        bot.send_message(message.chat.id, f"✅ Словарь успешно обновлен! Теперь в базе {len(GLOSSARY_CACHE)} терминов.")
+    bot.send_message(message.chat.id, "🔄 Скачиваю свежие данные...")
+    if update_glossary():
+        bot.send_message(message.chat.id, f"✅ Обновлено! Терминов в базе: {len(GLOSSARY_CACHE)}.")
     else:
-        bot.send_message(message.chat.id, "❌ Ошибка обновления. Таблица недоступна или пуста.")
-# ----------------------------------------------
+        bot.send_message(message.chat.id, "❌ Ошибка обновления.")
 
+# --- КОТИРОВКИ ---
 def get_market_rates():
     result_text = "<b>📊 Актуальные курсы и рынки:</b>\n\n"
-
-    # 1. Фиатные валюты через открытый API
     try:
         response = requests.get("https://open.er-api.com/v6/latest/USD", timeout=5)
         data = response.json()
-        
         if data.get("result") == "success":
             rates = data["rates"]
             usd_ILS = rates.get("ILS", 3.6)
             eur_USD = rates.get("EUR", 0.9)
             rub_USD = rates.get("RUB", 90.0)
             
-            eur_ILS = usd_ILS / eur_USD if eur_USD else 0
-            ils_RUB = rub_USD / usd_ILS if usd_ILS else 0
-            usd_RUB = rub_USD
-            eur_RUB = rub_USD * eur_USD
-            
             result_text += f"🇺🇸 USD/ILS: {usd_ILS:.2f}\n"
-            result_text += f"🇪🇺 EUR/ILS: {eur_ILS:.2f}\n"
-            result_text += f"🇮🇱 ILS/RUB: {ils_RUB:.2f}\n"
-            result_text += f"🇷🇺 USD/RUB: {usd_RUB:.2f}\n"
-            result_text += f"🇪🇺 EUR/RUB: {eur_RUB:.2f}\n\n"
-        else:
-            result_text += "<i>💱 Валюты временно недоступны</i>\n\n"
-    except Exception as e:
-        result_text += f"<i>💱 Ошибка загрузки валют: {e}</i>\n\n"
+            result_text += f"🇪🇺 EUR/ILS: {(usd_ILS / eur_USD if eur_USD else 0):.2f}\n"
+            result_text += f"🇮🇱 ILS/RUB: {(rub_USD / usd_ILS if usd_ILS else 0):.2f}\n"
+            result_text += f"🇷🇺 USD/RUB: {rub_USD:.2f}\n"
+            result_text += f"🇪🇺 EUR/RUB: {(rub_USD * eur_USD):.2f}\n\n"
+    except Exception:
+        result_text += "<i>💱 Валюты временно недоступны</i>\n\n"
 
-    # 2. Крипта и металлы через yfinance (на Render работает без блокировок)
-    crypto_tickers = {
-        "🪙 Bitcoin": "BTC-USD",
-        "🔷 Ethereum": "ETH-USD",
-        "🟣 Solana": "SOL-USD",
-        "🥇 Золото": "GC=F",
-        "🥈 Серебро": "SI=F"
-    }
-
+    crypto_tickers = {"🪙 Bitcoin": "BTC-USD", "🔷 Ethereum": "ETH-USD", "🟣 Solana": "SOL-USD", "🥇 Золото": "GC=F", "🥈 Серебро": "SI=F"}
     for name, ticker in crypto_tickers.items():
         try:
-            # Устанавливаем небольшой таймаут, чтобы бот не зависал при проблемах у Yahoo
-            data = yf.Ticker(ticker)
-            hist = data.history(period="1d")
+            hist = yf.Ticker(ticker).history(period="1d")
             if not hist.empty and 'Close' in hist.columns:
-                price = hist['Close'].iloc[-1]
-                result_text += f"{name}: ${price:.2f}\n"
-            else:
-                result_text += f"{name}: <i>нет данных</i>\n"
+                result_text += f"{name}: ${hist['Close'].iloc[-1]:.2f}\n"
         except Exception:
-            result_text += f"{name}: <i>временно недоступно</i>\n"
-
+            result_text += f"{name}: <i>нет данных</i>\n"
     return result_text
 
+# --- ОБРАБОТЧИК КНОПОК ---
 @bot.callback_query_handler(func=lambda call: True)
 def handle_query(call):
     try:
-        if call.data.startswith("info_"):
+        # Подменю: Статьи
+        if call.data == "menu_articles":
+            markup = InlineKeyboardMarkup(row_width=1)
+            # Укажи здесь ключи твоих статей из FINANCIAL_DATA
+            article_keys = ["banking", "pensions", "hishtalmut", "non_bank_cards"] 
+            for key in article_keys:
+                if key in FINANCIAL_DATA:
+                    markup.add(InlineKeyboardButton(FINANCIAL_DATA[key]['title'], callback_data=f"info_{key}"))
+            markup.add(InlineKeyboardButton("⬅️ Назад", callback_data="back_to_main"))
+            bot.edit_message_text("📚 *База знаний*\nВыбери статью:", chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode='Markdown', reply_markup=markup)
+
+        # Подменю: Таблицы
+        elif call.data == "menu_tables":
+            markup = InlineKeyboardMarkup(row_width=1)
+            # Укажи здесь ключи твоих таблиц из FINANCIAL_DATA
+            table_keys = ["pension_companies"] 
+            for key in table_keys:
+                if key in FINANCIAL_DATA:
+                    markup.add(InlineKeyboardButton(FINANCIAL_DATA[key]['title'], callback_data=f"info_{key}"))
+            markup.add(InlineKeyboardButton("⬅️ Назад", callback_data="back_to_main"))
+            bot.edit_message_text("📊 *Полезные таблицы*\nВыбери таблицу:", chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode='Markdown', reply_markup=markup)
+
+        # Вывод конкретной статьи/таблицы
+        elif call.data.startswith("info_"):
             topic_key = call.data.replace("info_", "", 1)
             if topic_key in FINANCIAL_DATA:
                 data = FINANCIAL_DATA[topic_key]
-                # Безопасное извлечение title и description
-                message_text = f"*{data.get('title', 'Информация')}*\n\n{data.get('description', 'Описание отсутствует.')}"
-                
+                message_text = f"*{data.get('title', '')}*\n\n{data.get('description', '')}"
                 markup = InlineKeyboardMarkup()
-                if 'url' in data and data['url']:
-                    markup.add(InlineKeyboardButton(text="Открыть статью", url=data['url']))
-                markup.add(InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="back_to_main"))
-                
-                bot.edit_message_text(
-                    chat_id=call.message.chat.id,
-                    message_id=call.message.message_id,
-                    text=message_text,
-                    parse_mode='Markdown',
-                    reply_markup=markup,
-                    disable_web_page_preview=True
-                )
+                if data.get('url'):
+                    markup.add(InlineKeyboardButton("Открыть материал", url=data['url']))
+                markup.add(InlineKeyboardButton("⬅️ Назад в меню", callback_data="back_to_main"))
+                bot.edit_message_text(message_text, chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode='Markdown', reply_markup=markup, disable_web_page_preview=True)
         
+        # Курсы валют
         elif call.data == "show_rates":
-            bot.edit_message_text(
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id,
-                text="<i>⏳ Собираю свежие котировки с рынков...</i>",
-                parse_mode='HTML'
-            )
-            rates_text = get_market_rates()
-            markup = InlineKeyboardMarkup(row_width=1)
-            markup.add(InlineKeyboardButton(text="⬅️ Назад в меню", callback_data="back_to_main"))
+            bot.edit_message_text("<i>⏳ Собираю котировки...</i>", chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode='HTML')
+            markup = InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ Назад", callback_data="back_to_main"))
+            bot.edit_message_text(get_market_rates(), chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode='HTML', reply_markup=markup)
             
-            bot.edit_message_text(
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id,
-                text=rates_text,
-                parse_mode='HTML',
-                reply_markup=markup
-            )
+        # Заглушка для Тлуша
+        elif call.data == "read_tlush":
+            markup = InlineKeyboardMarkup().add(InlineKeyboardButton("⬅️ Назад", callback_data="back_to_main"))
+            bot.edit_message_text("📄 *Чтение тлуша*\n\nФункция в разработке! Скоро здесь можно будет загрузить фото зарплатного листа для анализа.", chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode='Markdown', reply_markup=markup)
             
+        # Возврат в главное меню
         elif call.data == "back_to_main":
-            bot.edit_message_text(
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id,
-                text="Выбери тему, чтобы узнать больше:",
-                reply_markup=get_main_menu()
-            )
+            bot.edit_message_text("Выбери нужный раздел:", chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=get_main_menu())
+            
     except Exception as e:
-        print(f"Ошибка при обработке кнопки {call.data}: {e}")
+        print(f"Ошибка кнопки {call.data}: {e}")
     finally:
-        # Убираем "часики" на кнопке
         bot.answer_callback_query(call.id)
 
+# --- СЛОВАРЬ (ТЕКСТ) ---
 @bot.message_handler(func=lambda message: True)
 def handle_text(message):
     user_word = message.text.strip().lower()
-    found = False
-    
-    # Ищем слово в глобальном кэше (мгновенный ответ)
     for keys, definition in GLOSSARY_CACHE.items():
         if user_word in keys:
             bot.send_message(message.chat.id, definition, parse_mode='HTML')
-            found = True
-            break
-            
-    if not found:
-        bot.send_message(
-            message.chat.id,
-            "Я пока не знаю такого термина 😔\n"
-            "Попробуй написать его иначе."
-        )
+            return
+    bot.send_message(message.chat.id, "Я пока не знаю такого термина 😔\nПопробуй написать иначе.")
 
 if __name__ == "__main__":
-    # Запускаем веб-сервер в фоновом потоке для прохождения проверок Render
     threading.Thread(target=keep_alive, daemon=True).start()
     print("Веб-сервер запущен в фоне.")
-
-    print("Бот запущен и готов к работе...")
+    print("Бот запущен...")
     
-    # Бесконечный цикл опроса Telegram с защитой от падений
     while True:
         try:
             bot.infinity_polling(timeout=20, long_polling_timeout=20)
         except Exception as e:
-            print(f"Критическая ошибка polling: {e}")
-            print("Переподключение через 5 секунд...")
+            print(f"Ошибка polling: {e}")
             time.sleep(5)
