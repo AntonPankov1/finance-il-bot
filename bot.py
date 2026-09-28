@@ -8,6 +8,8 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, WebAppInfo
 import threading
 import psycopg2
 from psycopg2.extras import RealDictCursor
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton
+
 
 # Импортируем веб-сервер для поддержания активности на Render
 from keep_alive import keep_alive
@@ -41,6 +43,57 @@ def init_user_in_db(telegram_id):
             return True
         except Exception as e:
             print("Ошибка при записи юзера:", e)
+    return False
+
+def init_db_tables():
+    """Создает таблицы в базе данных при запуске, если их нет"""
+    conn = get_db_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            # Таблица пользователей (если еще не создана)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    telegram_id BIGINT PRIMARY KEY,
+                    monthly_budget NUMERIC(10, 2) DEFAULT 10000.00
+                );
+            """)
+            # Таблица расходов
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS expenses (
+                    id SERIAL PRIMARY KEY,
+                    telegram_id BIGINT REFERENCES users(telegram_id),
+                    category VARCHAR(50),
+                    amount NUMERIC(10, 2),
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """)
+            conn.commit()
+            cur.close()
+            conn.close()
+            print("Таблицы БД успешно инициализированы.")
+        except Exception as e:
+            print("Ошибка при создании таблиц:", e)
+
+# Вызываем функцию при старте скрипта (добавь эту строчку без отступов)
+init_db_tables()
+
+def add_expense_to_db(telegram_id, category, amount):
+    """Записывает расход в базу данных"""
+    conn = get_db_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO expenses (telegram_id, category, amount) 
+                VALUES (%s, %s, %s);
+            """, (telegram_id, category, amount))
+            conn.commit()
+            cur.close()
+            conn.close()
+            return True
+        except Exception as e:
+            print("Ошибка записи расхода:", e)
     return False
 
 # --- ИНИЦИАЛИЗАЦИЯ БОТА ---
@@ -103,22 +156,37 @@ def get_main_menu():
     btn_tlush = InlineKeyboardButton("📄 Чтение тлуша", callback_data="read_tlush")
     
     btn_rates = InlineKeyboardButton("💱 Курс валют", callback_data="show_rates")
-    btn_coinkeeper = InlineKeyboardButton(
-        "💰 CoinKeeper", 
-        web_app=WebAppInfo(url="https://antonpankov1.github.io/finance-il-bot/coinkeeper.html")
-    )
     
     markup.row(btn_calc, btn_tlush)
     markup.row(btn_rates, btn_coinkeeper)
     
     return markup
 
+from telebot.types import ReplyKeyboardMarkup, KeyboardButton # Добавь в импорты
+
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    init_user_in_db(message.from_user.id) # Регистрируем юзера при старте
+    init_user_in_db(message.from_user.id)
+    
+    # 1. Создаем постоянную нижнюю кнопку для Web App
+    reply_markup = ReplyKeyboardMarkup(resize_keyboard=True)
+    btn_app = KeyboardButton(
+        text="💰 Открыть CoinKeeper", 
+        web_app=WebAppInfo(url="https://antonpankov1.github.io/finance-il-bot/coinkeeper.html")
+    )
+    reply_markup.add(btn_app)
+    
+    # 2. Отправляем приветствие с нижней кнопкой
     bot.send_message(
         message.chat.id,
-        "Привет! Я твой финансовый навигатор по Израилю. Выбери нужный раздел:",
+        "Привет! Я твой финансовый навигатор по Израилю. Твой кошелек — в кнопке внизу экрана 👇",
+        reply_markup=reply_markup
+    )
+    
+    # 3. Отправляем инлайн-меню со статьями следом (без кнопки коинкипера)
+    bot.send_message(
+        message.chat.id,
+        "Также выбери нужный раздел базы знаний:",
         reply_markup=get_main_menu()
     )
 
@@ -217,6 +285,38 @@ def handle_query(call):
         print(f"Ошибка кнопки {call.data}: {e}")
     finally:
         bot.answer_callback_query(call.id)
+
+import json # Убедись, что json импортирован в самом верху файла
+
+@bot.message_handler(content_types=['web_app_data'])
+def handle_web_app_data(message):
+    try:
+        # Извлекаем JSON-данные, которые мы отправили из JavaScript
+        data = json.loads(message.web_app_data.data)
+        
+        action = data.get('action')
+        category = data.get('category_id')
+        amount = data.get('amount')
+        
+        if action == 'expense':
+            # Сохраняем в Supabase
+            success = add_expense_to_db(message.from_user.id, category, amount)
+            
+            if success:
+                bot.send_message(
+                    message.chat.id, 
+                    f"✅ Учтено: <b>{amount} ₪</b> в категорию «{category}»", 
+                    parse_mode='HTML'
+                )
+            else:
+                bot.send_message(message.chat.id, "❌ Ошибка базы данных.")
+                
+        elif action == 'to_savings':
+            bot.send_message(message.chat.id, f"🐷 <b>{amount} ₪</b> отправлено в копилку!")
+            
+    except Exception as e:
+        print("Ошибка обработки web_app_data:", e)
+        bot.send_message(message.chat.id, "❌ Произошла ошибка при обработке данных.")
 
 # --- СЛОВАРЬ (ТЕКСТ) ---
 @bot.message_handler(func=lambda message: True)
