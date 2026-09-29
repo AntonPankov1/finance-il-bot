@@ -183,14 +183,24 @@
         <div class="modal" id="modal" onclick="event.stopPropagation()">
             <h3 class="modal-title" id="modal-title">Добавить расход</h3>
             
-            <!-- НОВЫЙ БЛОК ВКЛАДОК -->
             <div class="modal-tabs" id="modal-tabs" style="display: none;">
                 <button class="modal-tab active" id="btn-expense" onclick="setMode('expense')">Расход</button>
+                <button class="modal-tab" id="btn-history" onclick="setMode('history')">История</button>
                 <button class="modal-tab" id="btn-limit" onclick="setMode('set_limit')">PRO: Лимит</button>
             </div>
             
-            <input type="number" id="amount-input" inputmode="decimal" placeholder="0 ₪">
+            <!-- Блок для ввода цифр и текста -->
+            <div id="input-section">
+                <input type="number" id="amount-input" inputmode="decimal" placeholder="0 ₪">
+                <input type="text" id="desc-input" placeholder="На что? (например: бургер)" style="width: 100%; padding: 16px; font-size: 16px; border: 2px solid var(--tg-theme-button-color, #3390ec); border-radius: 12px; background: transparent; color: var(--tg-theme-text-color, #000); box-sizing: border-box; margin-bottom: 20px;">
+            </div>
+
+            <!-- Блок для вывода истории -->
+            <div id="history-section" style="display: none; text-align: left; max-height: 250px; overflow-y: auto; margin-bottom: 20px;">
+                <p style="text-align:center; color:gray;">Загрузка истории...</p>
+            </div>
         </div>
+    </div>
 
     <script>
         // Инициализация Telegram Web App
@@ -205,48 +215,115 @@
         const modalTitle = document.getElementById('modal-title');
         const amountInput = document.getElementById('amount-input');
 
-        // Открытие окна ввода
-function setMode(mode) {
+        // Управление режимами всплывающего окна (Расход / История / Лимит)
+        function setMode(mode) {
             currentActionType = mode;
+            const inputSection = document.getElementById('input-section');
+            const historySection = document.getElementById('history-section');
+            const descInput = document.getElementById('desc-input');
+
+            // Сброс активных кнопок
+            ['expense', 'history', 'limit'].forEach(id => {
+                const el = document.getElementById(`btn-${id}`);
+                if(el) el.classList.remove('active');
+            });
+
             if (mode === 'expense') {
                 document.getElementById('btn-expense').classList.add('active');
-                document.getElementById('btn-limit').classList.remove('active');
                 modalTitle.innerText = `Расход: ${currentCategoryId}`;
+                inputSection.style.display = 'block';
+                descInput.style.display = 'block'; // Показываем поле комментария
+                historySection.style.display = 'none';
                 tg.MainButton.text = "ДОБАВИТЬ РАСХОД";
+                tg.MainButton.show();
             } else if (mode === 'set_limit') {
-                document.getElementById('btn-expense').classList.remove('active');
                 document.getElementById('btn-limit').classList.add('active');
                 modalTitle.innerText = `Изменить лимит: ${currentCategoryId}`;
+                inputSection.style.display = 'block';
+                descInput.style.display = 'none'; // Скрываем поле комментария
+                historySection.style.display = 'none';
                 tg.MainButton.text = "СОХРАНИТЬ ЛИМИТ";
+                tg.MainButton.show();
+            } else if (mode === 'history') {
+                document.getElementById('btn-history').classList.add('active');
+                modalTitle.innerText = `История: ${currentCategoryId}`;
+                inputSection.style.display = 'none';
+                historySection.style.display = 'block';
+                tg.MainButton.hide(); // Прячем зеленую кнопку Telegram
+                loadHistory(); // Загружаем данные с сервера
             }
         }
 
+        // Загрузка истории трат по категории
+        async function loadHistory() {
+            const historySection = document.getElementById('history-section');
+            historySection.innerHTML = '<p style="text-align:center; color:gray;">⏳ Загрузка...</p>';
+            
+            const userId = tg.initDataUnsafe?.user?.id;
+            if (!userId) return;
+
+            try {
+                const response = await fetch(`https://finance-il-bot.onrender.com/api/history?telegram_id=${userId}&category=${currentCategoryId}`);
+                const data = await response.json();
+                
+                if (data.history && data.history.length > 0) {
+                    let html = '';
+                    data.history.forEach(item => {
+                        const desc = item.description ? `<br><span style="font-size:13px; color:var(--tg-theme-hint-color, gray);">${item.description}</span>` : '';
+                        html += `<div style="padding: 12px 0; border-bottom: 1px solid #eee; display: flex; justify-content: space-between; align-items: center;">
+                            <div><b>${item.amount} ₪</b>${desc}</div>
+                            <div style="font-size:12px; color:gray; white-space: nowrap; margin-left: 10px;">${item.date}</div>
+                        </div>`;
+                    });
+                    historySection.innerHTML = html;
+                } else {
+                    historySection.innerHTML = '<p style="text-align:center; color:gray; padding-top: 20px;">Трат в этом месяце пока нет 🤷‍♂️</p>';
+                }
+            } catch (e) {
+                historySection.innerHTML = '<p style="text-align:center; color:red;">Ошибка загрузки</p>';
+            }
+        }
+
+        // Открытие окна ввода
         function openModal(categoryName, categoryId) {
             currentCategoryId = categoryId;
             const tabsDiv = document.getElementById('modal-tabs');
+            const inputSection = document.getElementById('input-section');
+            const descInput = document.getElementById('desc-input');
+            const historySection = document.getElementById('history-section');
             
             if (categoryId === 'to_savings') {
                 currentActionType = 'to_savings';
                 modalTitle.innerText = `Отложить в Копилку`;
                 tg.MainButton.text = "ОТЛОЖИТЬ";
-                tabsDiv.style.display = 'none';
+                if(tabsDiv) tabsDiv.style.display = 'none';
+                if(inputSection) inputSection.style.display = 'block';
+                if(descInput) descInput.style.display = 'none';
+                if(historySection) historySection.style.display = 'none';
+                tg.MainButton.show();
             } else if (categoryId === 'set_budget') {
                 currentActionType = 'set_budget';
                 modalTitle.innerText = `Установить бюджет на месяц`;
                 tg.MainButton.text = "СОХРАНИТЬ БЮДЖЕТ";
-                tabsDiv.style.display = 'none';
+                if(tabsDiv) tabsDiv.style.display = 'none';
+                if(inputSection) inputSection.style.display = 'block';
+                if(descInput) descInput.style.display = 'none';
+                if(historySection) historySection.style.display = 'none';
+                tg.MainButton.show();
             } else {
                 // Для обычных категорий показываем вкладки и сбрасываем на "Расход"
-                tabsDiv.style.display = 'flex';
+                if(tabsDiv) tabsDiv.style.display = 'flex';
                 setMode('expense');
             }
             
-            amountInput.value = '';
+            // Очищаем поля
+            if(amountInput) amountInput.value = '';
+            if(descInput) descInput.value = '';
+            
             modalOverlay.style.display = 'flex';
             setTimeout(() => modal.classList.add('open'), 10);
-            amountInput.focus();
-
-            tg.MainButton.show();
+            
+            if(amountInput) amountInput.focus();
         }
 
         // Закрытие окна
@@ -258,9 +335,10 @@ function setMode(mode) {
         }
 
         // Обработка нажатия на главную кнопку Telegram
-        // Обработка нажатия на главную кнопку Telegram
         tg.onEvent('mainButtonClicked', async function() {
+            const descInput = document.getElementById('desc-input');
             const amount = parseFloat(amountInput.value);
+            
             if (!amount || amount <= 0) {
                 tg.showAlert("Введите корректную сумму");
                 return;
@@ -276,7 +354,8 @@ function setMode(mode) {
                 telegram_id: userId,
                 action: currentActionType,
                 category_id: currentCategoryId,
-                amount: amount
+                amount: amount,
+                description: descInput ? descInput.value.trim() : '' // Добавлена отправка комментария
             };
             
             // Прячем окно ввода, чтобы не мешало
@@ -305,6 +384,7 @@ function setMode(mode) {
                 tg.MainButton.hide();
             }
         });
+
         // Функция загрузки данных с сервера
         async function loadData() {
             tg.ready(); 
@@ -328,6 +408,7 @@ function setMode(mode) {
                     document.getElementById('budget-spent').innerText = "Бэкенд вернул: " + data.error;
                     return;
                 }
+                
                 // 1. Расчет главного баланса
                 const budget = data.budget || 0;
                 const totalSpent = data.total_spent || 0;
@@ -353,6 +434,7 @@ function setMode(mode) {
                     document.getElementById('budget-spent').innerText = "Нажми сюда, чтобы задать бюджет 🎯";
                     document.getElementById('budget-spent').style.color = "#007aff";
                 }
+                
                 // 5. Обновление копилки
                 const savings = data.total_savings || 0;
                 document.getElementById('savings-amount').innerText = `${savings.toLocaleString('he-IL')} ₪`;
