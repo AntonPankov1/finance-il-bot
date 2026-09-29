@@ -395,7 +395,7 @@ def send_welcome(message):
         reply_markup=get_main_menu()
     )
 
-    @bot.message_handler(commands=['reset'])
+@bot.message_handler(commands=['reset'])
 def reset_user_data(message):
     user_id = message.from_user.id
     conn = get_db_connection()
