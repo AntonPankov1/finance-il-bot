@@ -212,8 +212,11 @@ function openModal(categoryName, categoryId) {
         async function loadData() {
             // Получаем ID пользователя из встроенного объекта Telegram
             const userId = tg.initDataUnsafe?.user?.id;
-            if (!userId) return; // Защита, если открыто не в телеграме
-
+            if (!userId) {
+                  document.getElementById('available-budget').innerText = "Ошибка ID";
+                  document.getElementById('budget-spent').innerText = "Telegram не передал данные пользователя";
+                return;
+                }
             try {
                 // Вызываем наш API маршрут
                 const response = await fetch(`https://finance-il-bot.onrender.com/api/stats?telegram_id=${userId}`);
