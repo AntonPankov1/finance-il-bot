@@ -395,6 +395,29 @@ def send_welcome(message):
         reply_markup=get_main_menu()
     )
 
+    @bot.message_handler(commands=['reset'])
+def reset_user_data(message):
+    user_id = message.from_user.id
+    conn = get_db_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            # 1. Удаляем всю историю трат пользователя
+            cur.execute("DELETE FROM expenses WHERE telegram_id = %s", (user_id,))
+            # 2. Удаляем персональные PRO-лимиты
+            cur.execute("DELETE FROM category_limits WHERE telegram_id = %s", (user_id,))
+            # 3. Сбрасываем общий бюджет до нуля
+            cur.execute("UPDATE users SET monthly_budget = 0 WHERE telegram_id = %s", (user_id,))
+            
+            conn.commit()
+            bot.send_message(message.chat.id, "♻️ Твоя финансовая история полностью очищена. Бюджет и лимиты сброшены!")
+        except Exception as e:
+            print("Ошибка сброса БД:", e)
+            bot.send_message(message.chat.id, "❌ Ошибка при очистке данных.")
+        finally:
+            cur.close()
+            conn.close()
+
 @bot.message_handler(commands=['update'])
 def force_update_glossary(message):
     bot.send_message(message.chat.id, "🔄 Скачиваю свежие данные...")
