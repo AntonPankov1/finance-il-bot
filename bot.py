@@ -53,10 +53,19 @@ def init_db_tables():
                     amount NUMERIC(10, 2),
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
-            cur.execute("CREATE INDEX IF NOT EXISTS idx_limits_user ON category_limits(telegram_id);")
+            """)
+            # НОВАЯ ТАБЛИЦА ДЛЯ ЛИМИТОВ:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS category_limits (
+                    telegram_id BIGINT REFERENCES users(telegram_id),
+                    category VARCHAR(50),
+                    limit_amount NUMERIC(10, 2),
+                    PRIMARY KEY (telegram_id, category)
+                );
             """)
             cur.execute("CREATE INDEX IF NOT EXISTS idx_expenses_user ON expenses(telegram_id);")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(created_at);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_limits_user ON category_limits(telegram_id);")
             conn.commit()
             print("Таблицы и индексы БД успешно инициализированы.")
         except Exception as e:

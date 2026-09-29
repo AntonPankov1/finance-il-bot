@@ -324,10 +324,10 @@ function setMode(mode) {
                 const data = await response.json();
 
                 if (data.error) {
-                    console.error("Ошибка API:", data.error);
+                    document.getElementById('available-budget').innerText = "Ошибка сервера";
+                    document.getElementById('budget-spent').innerText = "Бэкенд вернул: " + data.error;
                     return;
                 }
-
                 // 1. Расчет главного баланса
                 const budget = data.budget || 0;
                 const totalSpent = data.total_spent || 0;
