@@ -209,14 +209,24 @@ function openModal(categoryName, categoryId) {
             tg.sendData(JSON.stringify(data));
         });
         // Функция загрузки данных с сервера
+        // Функция загрузки данных с сервера
         async function loadData() {
-            // Получаем ID пользователя из встроенного объекта Telegram
-            const userId = tg.initDataUnsafe?.user?.id;
-            if (!userId) {
-                  document.getElementById('available-budget').innerText = "Ошибка ID";
-                  document.getElementById('budget-spent').innerText = "Telegram не передал данные пользователя";
+            // Обязательно сообщаем Телеграму, что приложение готово
+            tg.ready(); 
+
+            const unsafeData = tg.initDataUnsafe;
+            const rawData = tg.initData;
+
+            // Выводим сырые данные прямо на экран, чтобы понять, что скрывает Telegram
+            if (!unsafeData || !unsafeData.user) {
+                document.getElementById('available-budget').innerText = "Диагностика";
+                document.getElementById('budget-spent').innerText = "Объект: " + JSON.stringify(unsafeData) + " | Raw: " + (rawData ? "Строка есть" : "Пусто");
                 return;
-                }
+            }
+
+            // Если Телеграм всё-таки отдал данные, берем ID и идем дальше
+            const userId = unsafeData.user.id;
+
             try {
                 // Вызываем наш API маршрут
                 const response = await fetch(`https://finance-il-bot.onrender.com/api/stats?telegram_id=${userId}`);
