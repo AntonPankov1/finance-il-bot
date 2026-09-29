@@ -54,7 +54,12 @@ def init_db_tables():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             """)
-            # НОВАЯ ТАБЛИЦА ДЛЯ ЛИМИТОВ:
+            # БЕЗОПАСНО ДОБАВЛЯЕМ КОЛОНКУ ДЛЯ ОПИСАНИЯ
+            try:
+                cur.execute("ALTER TABLE expenses ADD COLUMN IF NOT EXISTS description TEXT;")
+            except Exception:
+                pass 
+
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS category_limits (
                     telegram_id BIGINT REFERENCES users(telegram_id),
@@ -93,15 +98,15 @@ def init_user_in_db(telegram_id):
             conn.close()
     return False
 
-def add_expense_to_db(telegram_id, category, amount):
+def add_expense_to_db(telegram_id, category, amount, description=""):
     conn = get_db_connection()
     if conn:
         try:
             cur = conn.cursor()
             cur.execute("""
-                INSERT INTO expenses (telegram_id, category, amount) 
-                VALUES (%s, %s, %s);
-            """, (telegram_id, category, amount))
+                INSERT INTO expenses (telegram_id, category, amount, description) 
+                VALUES (%s, %s, %s, %s);
+            """, (telegram_id, category, amount, description))
             conn.commit()
             return True
         except Exception as e:
@@ -151,7 +156,6 @@ def set_user_category_limit(telegram_id, category, limit_amount):
     return False
 
 # --- 2. API МАРШРУТЫ ДЛЯ WEB APP (Используем app из keep_alive) ---
-@app.route('/api/stats', methods=['GET'])
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
     user_id = request.args.get('telegram_id')
@@ -255,6 +259,7 @@ def handle_action():
     action = data.get('action')
     category = data.get('category_id')
     amount = data.get('amount')
+    description = data.get('description', '') # <--- Получаем комментарий от фронтенда
 
     if not user_id or not amount:
         return jsonify({"error": "Bad request"}), 400
@@ -262,19 +267,25 @@ def handle_action():
     success = False
     try:
         if action == 'expense':
-            success = add_expense_to_db(user_id, category, amount)
+            success = add_expense_to_db(user_id, category, amount, description)
             if success: 
-                bot.send_message(user_id, f"✅ Учтено: <b>{amount} ₪</b> в категорию «{category}»", parse_mode='HTML')
+                # Сообщение в боте теперь включает описание
+                bot.send_message(user_id, f"✅ Учтено: <b>{amount} ₪</b> в «{category}»\n<i>{description}</i>", parse_mode='HTML')
         
         elif action == 'to_savings':
-            success = add_expense_to_db(user_id, 'Копилка', amount)
+            success = add_expense_to_db(user_id, 'Копилка', amount, "Отложено")
             if success: 
                 bot.send_message(user_id, f"🐷 <b>{amount} ₪</b> отправлено в копилку!", parse_mode='HTML')
         
+        elif action == 'set_limit':
+            success = set_user_category_limit(user_id, category, amount)
+            if success: 
+                bot.send_message(user_id, f"⚙️ Лимит для «{category}» изменен на <b>{amount} ₪</b>", parse_mode='HTML')
+                
         elif action == 'set_budget':
             success = update_user_budget(user_id, amount)
             if success: 
-                bot.send_message(user_id, f"🎯 Твой новый бюджет на месяц установлен: <b>{amount} ₪</b>", parse_mode='HTML')
+                bot.send_message(user_id, f"🎯 Твой новый бюджет на месяц: <b>{amount} ₪</b>", parse_mode='HTML')
 
         if success:
             return jsonify({"status": "success"})
@@ -284,9 +295,40 @@ def handle_action():
         print("Ошибка обработки действия:", e)
         return jsonify({"error": "Internal error"}), 500
 
-# ВАЖНО: Функцию @bot.message_handler(content_types=['web_app_data']) 
-# теперь можно полностью удалить из bot.py, она больше не нужна.
-
+# НОВЫЙ МАРШРУТ: Выдает историю трат по конкретной категории
+@@app.route('/api/history', methods=['GET'])
+def get_history():
+    user_id = request.args.get('telegram_id')
+    category = request.args.get('category')
+    
+    if not user_id or not category:
+        return jsonify({"error": "Missing params"}), 400
+        
+    conn = get_db_connection()
+    if not conn:
+        return jsonify({"error": "DB error"}), 500
+        
+    try:
+        cur = conn.cursor()
+        cur.execute("""
+            SELECT amount, description, to_char(created_at, 'DD.MM HH24:MI') as date
+            FROM expenses 
+            WHERE telegram_id = %s AND category = %s
+              AND EXTRACT(MONTH FROM created_at) = EXTRACT(MONTH FROM CURRENT_DATE)
+              AND EXTRACT(YEAR FROM created_at) = EXTRACT(YEAR FROM CURRENT_DATE)
+            ORDER BY created_at DESC 
+            LIMIT 15
+        """, (user_id, category))
+        
+        history = cur.fetchall()
+        return jsonify({"history": history})
+    except Exception as e:
+        print("Ошибка истории:", e)
+        return jsonify({"error": "Internal error"}), 500
+    finally:
+        if 'cur' in locals(): cur.close()
+        if conn: conn.close()
+        
 def update_glossary():
     global GLOSSARY_CACHE
     try:
