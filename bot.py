@@ -53,6 +53,7 @@ def init_db_tables():
                     amount NUMERIC(10, 2),
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_limits_user ON category_limits(telegram_id);")
             """)
             cur.execute("CREATE INDEX IF NOT EXISTS idx_expenses_user ON expenses(telegram_id);")
             cur.execute("CREATE INDEX IF NOT EXISTS idx_expenses_date ON expenses(created_at);")
@@ -120,7 +121,28 @@ def update_user_budget(telegram_id, new_budget):
             conn.close()
     return False
 
+def set_user_category_limit(telegram_id, category, limit_amount):
+    conn = get_db_connection()
+    if conn:
+        try:
+            cur = conn.cursor()
+            cur.execute("""
+                INSERT INTO category_limits (telegram_id, category, limit_amount) 
+                VALUES (%s, %s, %s)
+                ON CONFLICT (telegram_id, category) 
+                DO UPDATE SET limit_amount = EXCLUDED.limit_amount;
+            """, (telegram_id, category, limit_amount))
+            conn.commit()
+            return True
+        except Exception as e:
+            print("Ошибка сохранения лимита:", e)
+        finally:
+            cur.close()
+            conn.close()
+    return False
+
 # --- 2. API МАРШРУТЫ ДЛЯ WEB APP (Используем app из keep_alive) ---
+@app.route('/api/stats', methods=['GET'])
 @app.route('/api/stats', methods=['GET'])
 def get_stats():
     user_id = request.args.get('telegram_id')
@@ -164,11 +186,40 @@ def get_stats():
         savings_data = cur.fetchone()
         total_savings = float(savings_data['total']) if savings_data and savings_data['total'] is not None else 0
 
+        # --- РАСЧЕТ ЛИМИТОВ (Умные проценты 50/30/20 + PRO настройки) ---
+        default_weights = {
+            'Продукты': 0.20,
+            'Счета': 0.20,
+            'Транспорт': 0.10,
+            'Еда вне дома': 0.10,
+            'Кафе': 0.05,
+            'Шоппинг': 0.05,
+            'Бары': 0.05,
+            'Курение': 0.05
+        }
+
+        # Получаем персональные лимиты пользователя из базы
+        cur.execute("SELECT category, limit_amount FROM category_limits WHERE telegram_id = %s", (user_id,))
+        custom_limits_rows = cur.fetchall()
+        custom_limits = {row['category']: float(row['limit_amount']) for row in custom_limits_rows}
+
+        # Собираем финальные лимиты: кастомный или автоматически рассчитанный по процентам
+        limits = {}
+        all_categories = ['Продукты', 'Транспорт', 'Кафе', 'Счета', 'Шоппинг', 'Бары', 'Курение', 'Еда вне дома']
+        
+        for cat in all_categories:
+            if cat in custom_limits:
+                limits[cat] = custom_limits[cat]
+            else:
+                weight = default_weights.get(cat, 0.05)
+                limits[cat] = round(budget * weight, 2)
+
         return jsonify({
             "budget": budget,
             "total_spent": total_spent,
             "categories": categories,
-            "total_savings": total_savings
+            "total_savings": total_savings,
+            "limits": limits
         })
         
     except Exception as e:
@@ -177,7 +228,6 @@ def get_stats():
     finally:
         if cur: cur.close()
         if conn: conn.close()
-
 # --- ИНИЦИАЛИЗАЦИЯ БОТА ---
 token = os.environ.get("BOT_TOKEN")
 if not token:
