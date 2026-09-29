@@ -242,17 +242,9 @@ def get_main_menu():
 def send_welcome(message):
     init_user_in_db(message.from_user.id)
     
-    reply_markup = ReplyKeyboardMarkup(resize_keyboard=True)
-    btn_app = KeyboardButton(
-        text="💰 Открыть CoinKeeper", 
-        web_app=WebAppInfo(url="https://antonpankov1.github.io/finance-il-bot/coinkeeper.html")
-    )
-    reply_markup.add(btn_app)
-    
     bot.send_message(
         message.chat.id,
-        "Привет! Я твой финансовый навигатор по Израилю. Твой кошелек — в кнопке внизу экрана 👇",
-        reply_markup=reply_markup
+        "Привет! Я твой финансовый навигатор по Израилю. Твой кошелек теперь всегда под рукой — нажми на кнопку меню слева от поля ввода текста 👇"
     )
     
     bot.send_message(
