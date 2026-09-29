@@ -87,6 +87,31 @@
             color: var(--tg-theme-text-color, #000); box-sizing: border-box;
             margin-bottom: 20px;
         }
+        /* Стили для переключателя режимов (Расход / Лимит) */
+        .modal-tabs {
+            display: flex;
+            background: var(--tg-theme-secondary-bg-color, #f4f4f5);
+            border-radius: 10px;
+            margin-bottom: 20px;
+            padding: 4px;
+        }
+        .modal-tab {
+            flex: 1;
+            padding: 8px 0;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--tg-theme-hint-color, #888);
+            background: transparent;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .modal-tab.active {
+            background: var(--tg-theme-bg-color, #fff);
+            color: var(--tg-theme-text-color, #000);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
     </style>
 </head>
 <body>
@@ -153,12 +178,19 @@
     </div>
 
     <!-- Всплывающее окно для ввода суммы -->
+   <!-- Всплывающее окно для ввода суммы -->
     <div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
         <div class="modal" id="modal" onclick="event.stopPropagation()">
             <h3 class="modal-title" id="modal-title">Добавить расход</h3>
+            
+            <!-- НОВЫЙ БЛОК ВКЛАДОК -->
+            <div class="modal-tabs" id="modal-tabs" style="display: none;">
+                <button class="modal-tab active" id="btn-expense" onclick="setMode('expense')">Расход</button>
+                <button class="modal-tab" id="btn-limit" onclick="setMode('set_limit')">PRO: Лимит</button>
+            </div>
+            
             <input type="number" id="amount-input" inputmode="decimal" placeholder="0 ₪">
         </div>
-    </div>
 
     <script>
         // Инициализация Telegram Web App
@@ -174,22 +206,39 @@
         const amountInput = document.getElementById('amount-input');
 
         // Открытие окна ввода
-function openModal(categoryName, categoryId) {
+function setMode(mode) {
+            currentActionType = mode;
+            if (mode === 'expense') {
+                document.getElementById('btn-expense').classList.add('active');
+                document.getElementById('btn-limit').classList.remove('active');
+                modalTitle.innerText = `Расход: ${currentCategoryId}`;
+                tg.MainButton.text = "ДОБАВИТЬ РАСХОД";
+            } else if (mode === 'set_limit') {
+                document.getElementById('btn-expense').classList.remove('active');
+                document.getElementById('btn-limit').classList.add('active');
+                modalTitle.innerText = `Изменить лимит: ${currentCategoryId}`;
+                tg.MainButton.text = "СОХРАНИТЬ ЛИМИТ";
+            }
+        }
+
+        function openModal(categoryName, categoryId) {
             currentCategoryId = categoryId;
+            const tabsDiv = document.getElementById('modal-tabs');
             
-            // Определяем тип действия
             if (categoryId === 'to_savings') {
                 currentActionType = 'to_savings';
                 modalTitle.innerText = `Отложить в Копилку`;
                 tg.MainButton.text = "ОТЛОЖИТЬ";
+                tabsDiv.style.display = 'none';
             } else if (categoryId === 'set_budget') {
                 currentActionType = 'set_budget';
                 modalTitle.innerText = `Установить бюджет на месяц`;
                 tg.MainButton.text = "СОХРАНИТЬ БЮДЖЕТ";
+                tabsDiv.style.display = 'none';
             } else {
-                currentActionType = 'expense';
-                modalTitle.innerText = `Расход: ${categoryName}`;
-                tg.MainButton.text = "ДОБАВИТЬ РАСХОД";
+                // Для обычных категорий показываем вкладки и сбрасываем на "Расход"
+                tabsDiv.style.display = 'flex';
+                setMode('expense');
             }
             
             amountInput.value = '';
@@ -288,10 +337,10 @@ function openModal(categoryName, categoryId) {
                 document.getElementById('available-budget').innerText = `${available.toLocaleString('he-IL')} ₪`;
                 document.getElementById('budget-spent').innerText = `Израсходовано: ${totalSpent.toLocaleString('he-IL')} ₪ (из ${budget.toLocaleString('he-IL')} ₪)`;
 
-                // 3. Распределение трат по категориям
-                const limits = { 'Продукты': 3000, 'Транспорт': 1000, 'Кафе': 500, 'Счета': 2000, 'Шоппинг': 1000 };
+                // 3. Распределение трат по категориям (С УЧЕТОМ УМНЫХ И КАСТОМНЫХ ЛИМИТОВ)
+                const dynamicLimits = data.limits || {};
                 
-                for (const [catName, limit] of Object.entries(limits)) {
+                for (const [catName, limit] of Object.entries(dynamicLimits)) {
                     const spent = data.categories[catName] || 0;
                     const el = document.getElementById(`limit-${catName}`);
                     if (el) {
