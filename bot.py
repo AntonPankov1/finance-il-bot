@@ -296,7 +296,7 @@ def handle_action():
         return jsonify({"error": "Internal error"}), 500
 
 # НОВЫЙ МАРШРУТ: Выдает историю трат по конкретной категории
-@@app.route('/api/history', methods=['GET'])
+@app.route('/api/history', methods=['GET'])
 def get_history():
     user_id = request.args.get('telegram_id')
     category = request.args.get('category')
@@ -328,7 +328,7 @@ def get_history():
     finally:
         if 'cur' in locals(): cur.close()
         if conn: conn.close()
-        
+
 def update_glossary():
     global GLOSSARY_CACHE
     try:
