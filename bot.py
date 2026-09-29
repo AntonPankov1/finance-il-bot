@@ -21,6 +21,7 @@ from flask import request, jsonify
 # 1. Импортируем наш сервер и функцию запуска из keep_alive
 from keep_alive import app, run_server
 from knowledge import FINANCIAL_DATA
+from telebot.types import ReplyKeyboardRemove
 
 # --- НАСТРОЙКИ БАЗЫ ДАННЫХ ---
 DB_URL = os.environ.get("DATABASE_URL")
@@ -188,6 +189,45 @@ bot = telebot.TeleBot(token)
 SHEET_CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRitIhrxkXddq7kpf1Oy3qHXxSjD2u-8I0-deeQNOVLnhqTpFVjCtKE0t_ohYT4fvRKbvtX7kdOArWm/pub?output=csv"
 GLOSSARY_CACHE = {}
 
+@app.route('/api/action', methods=['POST'])
+def handle_action():
+    data = request.json
+    user_id = data.get('telegram_id')
+    action = data.get('action')
+    category = data.get('category_id')
+    amount = data.get('amount')
+
+    if not user_id or not amount:
+        return jsonify({"error": "Bad request"}), 400
+
+    success = False
+    try:
+        if action == 'expense':
+            success = add_expense_to_db(user_id, category, amount)
+            if success: 
+                bot.send_message(user_id, f"✅ Учтено: <b>{amount} ₪</b> в категорию «{category}»", parse_mode='HTML')
+        
+        elif action == 'to_savings':
+            success = add_expense_to_db(user_id, 'Копилка', amount)
+            if success: 
+                bot.send_message(user_id, f"🐷 <b>{amount} ₪</b> отправлено в копилку!", parse_mode='HTML')
+        
+        elif action == 'set_budget':
+            success = update_user_budget(user_id, amount)
+            if success: 
+                bot.send_message(user_id, f"🎯 Твой новый бюджет на месяц установлен: <b>{amount} ₪</b>", parse_mode='HTML')
+
+        if success:
+            return jsonify({"status": "success"})
+        else:
+            return jsonify({"error": "DB error"}), 500
+    except Exception as e:
+        print("Ошибка обработки действия:", e)
+        return jsonify({"error": "Internal error"}), 500
+
+# ВАЖНО: Функцию @bot.message_handler(content_types=['web_app_data']) 
+# теперь можно полностью удалить из bot.py, она больше не нужна.
+
 def update_glossary():
     global GLOSSARY_CACHE
     try:
@@ -244,7 +284,8 @@ def send_welcome(message):
     
     bot.send_message(
         message.chat.id,
-        "Привет! Я твой финансовый навигатор по Израилю. Твой кошелек теперь всегда под рукой — нажми на кнопку меню слева от поля ввода текста 👇"
+        "Привет! Я твой финансовый навигатор по Израилю. Твой кошелек теперь всегда под рукой — нажми на кнопку finance manager слева от поля ввода текста 👇",
+        reply_markup=ReplyKeyboardRemove() # <--- ЭТА КОМАНДА НАВСЕГДА УБЕРЕТ СТАРУЮ КНОПКУ
     )
     
     bot.send_message(

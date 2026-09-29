@@ -192,21 +192,52 @@ function openModal(categoryName, categoryId) {
         }
 
         // Обработка нажатия на главную кнопку Telegram
-        tg.onEvent('mainButtonClicked', function() {
+        // Обработка нажатия на главную кнопку Telegram
+        tg.onEvent('mainButtonClicked', async function() {
             const amount = parseFloat(amountInput.value);
             if (!amount || amount <= 0) {
                 tg.showAlert("Введите корректную сумму");
                 return;
             }
 
-            // Отправляем данные боту (временно через sendData, позже подключим базу)
+            const userId = tg.initDataUnsafe?.user?.id;
+            if (!userId) {
+                tg.showAlert("Ошибка доступа: ID не найден");
+                return;
+            }
+
             const data = {
+                telegram_id: userId,
                 action: currentActionType,
                 category_id: currentCategoryId,
                 amount: amount
             };
             
-            tg.sendData(JSON.stringify(data));
+            // Прячем окно ввода, чтобы не мешало
+            closeModal();
+            tg.MainButton.showProgress(); // Показываем крутилку загрузки на кнопке
+            
+            try {
+                // Отправляем данные на наш сервер
+                const response = await fetch(`https://finance-il-bot.onrender.com/api/action`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(data)
+                });
+                
+                if (response.ok) {
+                    // Если успешно - заново скачиваем статистику, чтобы обновить цифры на экране
+                    await loadData();
+                } else {
+                    tg.showAlert("Ошибка сохранения в базу");
+                }
+            } catch (err) {
+                console.error(err);
+                tg.showAlert("Сетевая ошибка при отправке данных");
+            } finally {
+                tg.MainButton.hideProgress();
+                tg.MainButton.hide();
+            }
         });
         // Функция загрузки данных с сервера
         async function loadData() {
